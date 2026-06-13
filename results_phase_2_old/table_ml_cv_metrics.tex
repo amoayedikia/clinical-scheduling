@@ -1,0 +1,17 @@
+\begin{table}[H]
+\centering
+\caption{Cross-validated predictive performance of the gradient boosting model for MRI scan failure prediction. Results from 50-fold repeated stratified cross-validation on 2,000 simulation-augmented patient records (425 failures, 21.2\% positive rate).}
+\label{tab:ml_cv_metrics}
+\begin{tabular}{lcccc}
+\toprule
+Metric & Mean & Std & \multicolumn{2}{c}{95\% CI} \\
+\midrule
+AUC-ROC & 0.6673 & 0.0324 & 0.6153 & 0.7242 \\
+PR-AUC & 0.3809 & 0.0405 & 0.3114 & 0.4468 \\
+Brier Score & 0.1575 & 0.0080 & 0.1458 & 0.1723 \\
+F1 Score & 0.4674 & 0.0376 & 0.3917 & 0.5302 \\
+Precision & 0.4335 & 0.0579 & 0.3315 & 0.5285 \\
+Recall & 0.5155 & 0.0460 & 0.4497 & 0.6065 \\
+\bottomrule
+\end{tabular}
+\end{table}
