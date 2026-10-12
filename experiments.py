@@ -80,6 +80,69 @@ def generate_synthetic_cohort(
     return patients
 
 
+
+# =============================================================================
+# COHORT SOURCE (synthetic | real NACC74) -- Track A1 extension
+# =============================================================================
+# "Add, don't replace": default mode 'synthetic' reproduces the submitted
+# experiments bit-for-bit. mode='real' loads the NACC74 participant pool once
+# (via nacc74_cohort_builder) and samples real covariate vectors per
+# replication, with a distinct seed per replication supplied by each caller.
+COHORT_SOURCE = {'mode': 'synthetic', 'pool': None}
+
+
+def configure_cohort_source(mode='synthetic', era='both', recalibrate=True, pool_seed=42):
+    """Select the cohort source for all experiments in this process."""
+    COHORT_SOURCE['mode'] = mode
+    COHORT_SOURCE['era'] = era
+    COHORT_SOURCE['recalibrate'] = recalibrate
+    if mode == 'real':
+        from nacc74_cohort_builder import load_pool, assign_p_fail
+        pool = assign_p_fail(load_pool(era), seed=pool_seed, recalibrate=recalibrate)
+        COHORT_SOURCE['pool'] = pool
+        print(f"[cohort] REAL NACC74 pool: {len(pool)} participants | era={era} | "
+              f"recalibrate={recalibrate} | p_fail mean {pool.P_FAIL.mean():.3f} | "
+              f"CDR>=1 {100 * (pool.CDRGLOB >= 1).mean():.1f}%")
+    return COHORT_SOURCE
+
+
+def _sample_real_cohort(n_patients, high_risk_fraction=None, seed=None):
+    """Sample real NACC74 participants -> List[PatientData].
+
+    high_risk_fraction=None: natural pool case-mix (the A1 default -- real
+    joint covariate distribution). An explicit fraction (E6) stratifies by the
+    paper's high-risk definition, CDRGLOB >= 1."""
+    pool = COHORT_SOURCE['pool']
+    if high_risk_fraction is None:
+        rows = pool.sample(n=n_patients, random_state=seed)
+    else:
+        n_hi = int(round(n_patients * high_risk_fraction))
+        n_lo = n_patients - n_hi
+        parts = []
+        if n_hi > 0:
+            parts.append(pool[pool.CDRGLOB >= 1].sample(n=n_hi, random_state=seed))
+        if n_lo > 0:
+            parts.append(pool[pool.CDRGLOB < 1].sample(n=n_lo, random_state=seed))
+        rows = pd.concat(parts).sample(frac=1, random_state=seed)
+    return [PatientData(f"P{i+1:03d}", float(r.P_FAIL), float(r.NACCAGE),
+                        float(r.MOCATOTS), float(r.CDRGLOB))
+            for i, (_, r) in enumerate(rows.iterrows())]
+
+
+def get_cohort(n_patients, high_risk_fraction=None, seed=None):
+    """Cohort dispatcher used by E1-E7.
+
+    Synthetic mode: identical to the submitted experiments (None -> the
+    submitted 0.25 high-risk default of generate_synthetic_cohort).
+    Real mode: NACC74 sampling as above."""
+    if COHORT_SOURCE['mode'] == 'real':
+        return _sample_real_cohort(n_patients, high_risk_fraction, seed)
+    return generate_synthetic_cohort(
+        n_patients,
+        high_risk_fraction=0.25 if high_risk_fraction is None else high_risk_fraction,
+        seed=seed)
+
+
 # =============================================================================
 # EXPERIMENT E1: BASELINE COMPARISON
 # =============================================================================
@@ -105,7 +168,7 @@ def run_experiment_e1(n_replications=100, n_patients=10, n_simulations=100, seed
     iterator = tqdm(range(n_replications), desc="E1") if verbose else range(n_replications)
     
     for rep in iterator:
-        patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+        patients = get_cohort(n_patients, seed=seed + rep)
         
         for method_name, method_func in methods.items():
             schedule_df, solve_time = method_func(patients, DEFAULT_CONFIG)
@@ -149,7 +212,7 @@ def run_experiment_e2(patient_sizes=[10, 20, 30, 50], n_replications=10, seed=42
             print(f"\n  Testing n = {n_patients}...")
         
         for rep in tqdm(range(n_replications), desc=f"n={n_patients}", disable=not verbose):
-            patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+            patients = get_cohort(n_patients, seed=seed + rep)
             
             config = DEFAULT_CONFIG.copy()
             config['solver_timeout'] = max(60, n_patients * 6)
@@ -192,7 +255,7 @@ def run_experiment_e3(lambda_values=[0.0, 0.25, 0.5, 1.0, 2.0], n_patients=10, n
             print(f"\n  Testing λ = {lambda_val}...")
         
         for rep in tqdm(range(n_replications), desc=f"λ={lambda_val}", disable=not verbose):
-            patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+            patients = get_cohort(n_patients, seed=seed + rep)
             
             config = DEFAULT_CONFIG.copy()
             config['wait_time_penalty'] = lambda_val
@@ -227,7 +290,7 @@ def run_experiment_e4(n_patients=10, n_replications=50, n_simulations=100, seed=
     iterator = tqdm(range(n_replications), desc="E4") if verbose else range(n_replications)
     
     for rep in iterator:
-        patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+        patients = get_cohort(n_patients, seed=seed + rep)
         original_p_fail = {p.patient_id: p.p_fail_mri for p in patients}
         
         # Full ML
@@ -285,7 +348,7 @@ def run_experiment_e5(prediction_errors=[0.05, 0.10, 0.15, 0.20], n_patients=10,
             print(f"\n  Testing σ = {error_std}...")
         
         for rep in tqdm(range(n_replications), desc=f"σ={error_std}", disable=not verbose):
-            patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+            patients = get_cohort(n_patients, seed=seed + rep)
             true_p_fail = {p.patient_id: p.p_fail_mri for p in patients}
             
             np.random.seed(seed + rep + int(error_std * 1000))
@@ -327,7 +390,7 @@ def run_experiment_e6(high_risk_fractions=[0.0, 0.1, 0.2, 0.3, 0.5], n_patients=
             print(f"\n  Testing {int(hr_frac*100)}% high-risk...")
         
         for rep in tqdm(range(n_replications), desc=f"{int(hr_frac*100)}%", disable=not verbose):
-            patients = generate_synthetic_cohort(n_patients, high_risk_fraction=hr_frac, seed=seed + rep)
+            patients = get_cohort(n_patients, high_risk_fraction=hr_frac, seed=seed + rep)
             
             for method_name, method_func in [
                 ('Stochastic-MILP', lambda p, c: stochastic_milp_schedule(p, c, verbose=False)),
@@ -367,10 +430,15 @@ def summarize_e1(df):
 # =============================================================================
 # MAIN
 # =============================================================================
-def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output_dir='results', quick=False, verbose=True):
+def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output_dir='results', quick=False, verbose=True,
+                        cohort='synthetic', era='both', recalibrate=True):
     """Run all experiments and save results."""
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    configure_cohort_source(cohort, era=era, recalibrate=recalibrate)
+    tag = '' if cohort == 'synthetic' else ('_real' + ('' if recalibrate else '_rawp')
+                                            + ('' if era == 'both' else f'_{era}'))
     
     if quick:
         EXPERIMENT_CONFIG['n_replications'] = 10
@@ -390,7 +458,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             n_replications=EXPERIMENT_CONFIG['n_replications'],
             n_simulations=EXPERIMENT_CONFIG['n_simulations'],
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e1_baseline_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e1_baseline{tag}_{timestamp}.csv', index=False)
         results['E1'] = df
         print("\nE1 Summary:")
         print(summarize_e1(df).to_string())
@@ -400,7 +468,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             patient_sizes=EXPERIMENT_CONFIG['patient_sizes'],
             n_replications=10 if quick else 10,
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e2_scalability_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e2_scalability{tag}_{timestamp}.csv', index=False)
         results['E2'] = df
     
     if 'E3' in experiments:
@@ -408,7 +476,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             lambda_values=EXPERIMENT_CONFIG['lambda_values'],
             n_replications=20 if not quick else 5,
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e3_lambda_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e3_lambda{tag}_{timestamp}.csv', index=False)
         results['E3'] = df
     
     if 'E4' in experiments:
@@ -416,7 +484,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             n_replications=50 if not quick else 10,
             n_simulations=EXPERIMENT_CONFIG['n_simulations'],
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e4_ml_value_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e4_ml_value{tag}_{timestamp}.csv', index=False)
         results['E4'] = df
     
     if 'E5' in experiments:
@@ -424,7 +492,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             prediction_errors=EXPERIMENT_CONFIG['prediction_errors'],
             n_replications=30 if not quick else 10,
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e5_robustness_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e5_robustness{tag}_{timestamp}.csv', index=False)
         results['E5'] = df
     
     if 'E6' in experiments:
@@ -432,7 +500,7 @@ def run_all_experiments(experiments=['E1', 'E2', 'E3', 'E4', 'E5', 'E6'], output
             high_risk_fractions=EXPERIMENT_CONFIG['high_risk_fractions'],
             n_replications=30 if not quick else 10,
             seed=EXPERIMENT_CONFIG['seed'], verbose=verbose)
-        df.to_csv(f'{output_dir}/e6_cohort_{timestamp}.csv', index=False)
+        df.to_csv(f'{output_dir}/e6_cohort{tag}_{timestamp}.csv', index=False)
         results['E6'] = df
     
     print("\n" + "="*70)
@@ -449,6 +517,13 @@ if __name__ == '__main__':
     parser.add_argument('--experiments', nargs='+', default=['E1'], help='Experiments to run')
     parser.add_argument('--output', default='results', help='Output directory')
     parser.add_argument('--quick', action='store_true', help='Quick mode (fewer replications)')
+    parser.add_argument('--cohort', choices=['synthetic', 'real'], default='synthetic',
+                        help='Cohort source: synthetic (submitted default) or real NACC74')
+    parser.add_argument('--era', choices=['both', 'UDS3', 'UDS4'], default='both',
+                        help='NACC74 era filter (real mode only)')
+    parser.add_argument('--p-fail', choices=['recalibrated', 'raw'], default='recalibrated',
+                        help='Real mode: recalibrate pool p_fail mean to 0.212 (primary) or raw')
     args = parser.parse_args()
     
-    run_all_experiments(experiments=args.experiments, output_dir=args.output, quick=args.quick)
+    run_all_experiments(experiments=args.experiments, output_dir=args.output, quick=args.quick,
+                        cohort=args.cohort, era=args.era, recalibrate=(args.p_fail == 'recalibrated'))

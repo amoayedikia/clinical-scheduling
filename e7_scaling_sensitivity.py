@@ -36,7 +36,7 @@ from baselines import (
     stochastic_milp_schedule,
     evaluate_schedule_with_simulation,
 )
-from experiments import generate_synthetic_cohort
+from experiments import generate_synthetic_cohort, get_cohort, configure_cohort_source
 
 
 # =============================================================================
@@ -108,7 +108,7 @@ def run_experiment_e7(
                 print(f"\n  Combo {combo_idx}/{total_combos}: UDS={uds_scale}, CSF={csf_scale}{tag}")
 
             for rep in tqdm(range(n_replications), desc="reps", disable=not verbose):
-                patients = generate_synthetic_cohort(n_patients, seed=seed + rep)
+                patients = get_cohort(n_patients, seed=seed + rep)
 
                 for method_name, method_func in METHODS:
                     try:
@@ -226,7 +226,14 @@ def main():
     parser.add_argument('--output-dir', default='results',
                         help='Directory for the output CSV.')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--cohort', choices=['synthetic', 'real'], default='synthetic')
+    parser.add_argument('--era', choices=['both', 'UDS3', 'UDS4'], default='both')
+    parser.add_argument('--p-fail', choices=['recalibrated', 'raw'], default='recalibrated')
     args = parser.parse_args()
+
+    configure_cohort_source(args.cohort, era=args.era, recalibrate=(args.p_fail == 'recalibrated'))
+    tag = '' if args.cohort == 'synthetic' else ('_real' + ('' if args.p_fail == 'recalibrated' else '_rawp')
+                                                 + ('' if args.era == 'both' else f'_{args.era}'))
 
     if args.quick:
         n_replications, n_simulations = 10, 50
@@ -246,12 +253,12 @@ def main():
         verbose=True,
     )
 
-    raw_path = os.path.join(args.output_dir, f'e7_scaling_sensitivity_{timestamp}.csv')
+    raw_path = os.path.join(args.output_dir, f'e7_scaling_sensitivity{tag}_{timestamp}.csv')
     df.to_csv(raw_path, index=False)
     print(f"\nRaw results written to: {raw_path}")
 
     summary = summarize_e7(df)
-    summary_path = os.path.join(args.output_dir, f'e7_scaling_sensitivity_summary_{timestamp}.csv')
+    summary_path = os.path.join(args.output_dir, f'e7_scaling_sensitivity{tag}_summary_{timestamp}.csv')
     summary.to_csv(summary_path, index=False)
     print(f"Summary written to:     {summary_path}")
 

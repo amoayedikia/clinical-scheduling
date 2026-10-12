@@ -51,7 +51,9 @@ def load_pool(era='both'):
     df = df[df.ERA.isin(['UDS3', 'UDS4'])]
     if era != 'both':
         df = df[df.ERA == era]
-    df[FEATURES] = df[FEATURES].replace(MISSING, np.nan)
+    # .mask(.isin()) instead of .replace(): identical semantics, avoids a
+    # pandas copy-on-write replace_list bug (IndexError) on newer pandas
+    df[FEATURES] = df[FEATURES].mask(df[FEATURES].isin(MISSING))
     df = df.dropna(subset=ESSENTIAL + ['UDS_DATE'])
     # one row per participant: latest eligible visit (real covariate vector, no dupes)
     df = df.sort_values('UDS_DATE').drop_duplicates('NACCID', keep='last')
