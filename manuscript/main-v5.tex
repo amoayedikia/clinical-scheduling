@@ -1,0 +1,686 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{natbib}
+\usepackage{doi}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{bbm}
+
+% Citation style
+\bibliographystyle{apalike}
+\setcitestyle{authoryear,round,semicolon}
+
+% Line spacing
+\onehalfspacing
+
+\title{Prediction Quality Versus Optimization Sophistication in Risk-Adjusted Clinical Scheduling}
+
+\author{Alireza Moayedikia\textsuperscript{a,*}}
+
+\date{\vspace{-1em}\small \textsuperscript{a}Swinburne Business School, Swinburne University of Technology, Hawthorn VIC, Australia}
+
+
+\begin{document}
+
+\maketitle
+
+\renewcommand{\thefootnote}{*}
+\footnotetext{Corresponding author: Alireza Moayedikia is with the department of Business Technology and Entreprenourship, Swinburne University of Technology, John Street, Hawthorn 3122 VIC Australia. Email: amoayedikia@swin.edu.au}
+\renewcommand{\thefootnote}{\arabic{footnote}}
+
+\begin{abstract}
+Clinical trials require precise coordination of diagnostic procedures, yet conventional scheduling systems treat patients as interchangeable, ignoring observable heterogeneity in procedure completion risk. We investigate where operational value resides in prescriptive analytics systems that integrate machine learning prediction with stochastic optimization. Using Alzheimer's disease clinical trials as a structurally demanding test case, we train gradient boosting models on cognitive assessments, behavioral symptoms, and clinical staging to estimate patient-specific Magnetic Resonance Imaging scan failure probabilities, then embed these predictions as Bernoulli service time distributions in a stochastic job-shop scheduling formulation. Computational experiments on simulation-augmented patient cohorts calibrated to published clinical failure rates reveal a striking inversion of conventional priorities: prediction quality, not optimization sophistication, drives scheduling performance. A simple risk-first sequencing heuristic achieves statistically indistinguishable performance from mixed-integer programming, reducing overtime probability by approximately nine percentage points compared to age-based stratification, despite requiring negligible computation time. Notably, applying machine learning to demographic features alone provides no advantage over simple stratification rules, demonstrating that value derives from incorporating cognitive and behavioral biomarkers rather than from model complexity. A counter-intuitive finding emerges: age-based heuristics, embodying common clinical intuition, underperform schedules that ignore patient heterogeneity entirely, because partial information introduces systematic misallocation. The framework exhibits robustness to prediction error and provides increasing benefit for higher-risk patient populations. These findings suggest that facilities should prioritize investment in predictive infrastructure over optimization software when implementing risk-adjusted scheduling for capacity-constrained diagnostic services.
+\end{abstract}
+
+\noindent\textbf{Keywords:} Scheduling; Stochastic programming; Prescriptive analytics; Machine learning; Healthcare operations
+
+
+
+\newpage
+\section{Introduction}
+
+
+Complex service systems frequently encounter a scheduling paradox: rich data about individual customers or patients is routinely collected, yet operational scheduling decisions treat all individuals as interchangeable draws from population-level distributions. This gap between predictive information and prescriptive action is particularly acute in healthcare settings where clinical assessments capture patient-specific risk factors that demonstrably affect procedure outcomes, yet appointment scheduling systems assign uniform time slots regardless of individual completion probabilities. The consequences---cascading delays, staff overtime, degraded patient experience, and resource underutilization---accumulate daily across healthcare facilities worldwide.
+
+We address this gap by developing a prescriptive analytics framework that integrates machine learning prediction with stochastic optimization for appointment scheduling in capacity-constrained diagnostic services. While our methodology generalizes to any multi-stage service system where observable patient characteristics predict processing outcomes---including oncology screening protocols, surgical preparation sequences, and complex customized manufacturing---we ground our development in the operationally demanding context of MRI neuroimaging within Alzheimer's disease clinical trials. This application domain presents the scheduling challenge in acute form: the very pathology under investigation (progressive neurodegeneration affecting attention, executive function, and motor control) elevates scan failure probability, yet standardized research protocols preclude the ad hoc schedule adjustments that might accommodate such heterogeneity in routine clinical practice.
+
+Phase III clinical trials in Alzheimer's disease routinely enroll thousands of participants across dozens of international sites, with per-patient costs exceeding \$40,000 and total program expenditures frequently surpassing \$2 billion \citep{cummings2014clinical}. These trials demand multi-modal data collection combining standardized cognitive assessments, structural and functional MRI neuroimaging, and cerebrospinal fluid biomarker sampling---procedures that must occur within protocol-specified visit windows to maintain data integrity and regulatory compliance. MRI scanner time represents one of the most expensive and capacity-constrained resources in clinical research facilities, with hourly operating costs typically ranging from \$500 to \$1,500. When a scan fails due to excessive patient motion and must be repeated, consequences cascade throughout the daily schedule: subsequent patients experience extended waiting times, staff incur overtime costs, and the facility's effective throughput diminishes. A 72-year-old participant with moderate cognitive impairment and no prior scanning history faces categorically different operational risk than a 65-year-old with normal cognition who has successfully completed multiple research scans, yet current scheduling systems treat these patients identically.
+
+The operations research community has developed sophisticated methodologies for healthcare scheduling under uncertainty. The canonical two-stage stochastic program introduced by \citet{denton2003sequential} minimizes expected waiting, idle, and overtime costs with first-stage decisions specifying appointment times and second-stage recourse capturing realized outcomes. Subsequent work extended this framework to operating room scheduling \citep{cardoen2010operating, denton2010optimal}, multi-provider coordination \citep{gul2015progressive}, and distributional robustness when service time distributions are imprecisely known \citep{shehadeh2021distributionally}. The comprehensive reviews by \citet{ahmadi2017outpatient} and the recent EJOR retrospective by \citet{belien2025fifty} confirm scheduling optimization as a foundational application domain. A critical limitation pervades this literature: stochastic models parameterize uncertainty at the procedure-type level (the distribution of ``brain MRI'' durations) rather than conditioning on individual patient characteristics. The field has not developed systematic methods for incorporating patient-specific covariates into the stochastic parameters that drive scheduling decisions.
+
+Parallel developments in machine learning have produced increasingly accurate predictive models for healthcare outcomes. \citet{bartek2019improving} demonstrated that gradient boosting substantially improves surgery duration prediction; \citet{vakli2023automatic} achieved 94\% accuracy detecting MRI motion artifacts via convolutional neural networks; \citet{porembka2025disparities} identified demographic and clinical predictors of motion artifacts across 68,000 MRI examinations, explicitly recommending ``accounting for motion-risk factors in scheduling.'' The Alzheimer's disease literature has achieved particular sophistication: \citet{song2023random} developed random survival forests achieving 90.8\% concordance on NACC data, while \citet{elsappagh2024explainable} reached 98.9\% F1 scores on classification tasks. Yet these predictive capabilities remain siloed from operations---they inform clinicians about outcomes but provide no mechanism for translating predicted risk into scheduling decisions.
+
+The emerging prescriptive analytics paradigm offers a conceptual bridge. \citet{bertsimas2020predictive} formalized the transition from predictive to prescriptive analytics, introducing the ``coefficient of prescriptiveness'' metric. \citet{elmachtoub2022smart} developed the Smart Predict-then-Optimize (SPO) framework with decision-aware loss functions. The comprehensive EJOR survey by \citet{sadana2025contextual} catalogued contextual optimization methods, explicitly noting that healthcare applications remain underexplored. Within healthcare, \citet{srinivas2018prescriptive} pioneered prescriptive analytics for outpatient scheduling using ML-based risk classification, though the optimization component relied on heuristic rules. \citet{salah2022predict} advanced to a predict-then-schedule framework but acknowledged the limitation of feeding point predictions into deterministic models, noting that "inputting predicted values directly into the optimization model may result in sub-optimal decisions when the model objective is nonlinear."
+
+This paper develops a two-phase prescriptive analytics framework to investigate a question with broad implications for the predict-then-optimize paradigm: \textit{when observable individual characteristics predict service outcomes, does the primary operational benefit derive from better prediction or better optimization?} In Phase 1, we train machine learning models on cognitive biomarkers from standardized clinical assessments to predict each patient's individualized probability of MRI scan failure, denoted $p_i$ for patient $i$. Critically, we use these predicted probabilities not as point estimates for expected-value scheduling, but as parameters defining patient-specific Bernoulli outcome distributions.
+
+In Phase 2, we formulate a stochastic mixed-integer program where patient-specific service time distributions are parameterized by these ML-predicted probabilities. For patient $i$, the service time follows a Bernoulli-weighted mixture: the nominal scan duration $d_i^0$ with probability $(1-p_i)$ or the extended duration $d_i^0 + \delta_i$ (accounting for repositioning, rescanning, or session termination) with probability $p_i$. Following computational tractability arguments established by \citet{denton2003sequential} and \citet{mancilla2012sample}, we implement an expected-value formulation where risk-adjusted durations $\tilde{d}_i = d_i^0 + p_i \cdot \delta_i$ allocate buffer time proportionally to predicted failure probability. This formulation captures patient-specific risk heterogeneity while maintaining the computational efficiency required for real-time operational deployment.
+
+By systematically varying the prediction source (no prediction, age-only rules, age-only ML, full ML with cognitive and behavioral features) and the optimization method (heuristic sorting rules, mixed-integer programming) across comprehensive computational experiments, we establish three findings with implications beyond the clinical application.
+
+First, \textit{prediction dominates optimization for this problem class}. A simple longest-processing-time heuristic achieves statistically indistinguishable performance from a Stochastic-MILP formulation, despite the latter requiring $35{,}000\times$ more computation time at $n = 10$ patients---a gap that widens to complete intractability at realistic clinic volumes ($n \geq 20$), where the MILP fails to find optimal solutions within practical time limits while LPT solves in constant time. This challenges the prescriptive analytics literature's emphasis on optimization sophistication and suggests that for scheduling problems where risk-ordering determines the solution structure, investment in better prediction yields far greater returns than investment in better optimization.
+
+Second, \textit{feature richness dominates model complexity}. Applying gradient boosting to age-derived features alone provides no advantage over simple age-bracket rules. The value of machine learning emerges only when the feature set includes cognitive assessments and behavioral symptoms---approximately 80\% of predictive signal resides in non-demographic features. This implies that the bottleneck to effective prescriptive analytics is not algorithmic sophistication but data infrastructure: collecting and integrating the right features matters more than choosing the right model.
+
+Third, \textit{partial information can be worse than no information}. Age-based heuristics, which embody a common form of clinical domain knowledge, actually underperform deterministic scheduling that ignores patient heterogeneity entirely. This counter-intuitive result arises because age is a weak proxy for procedural failure risk, and scheduling based on an inadequate proxy introduces systematic misallocation that uniform treatment avoids. This finding carries implications for any setting where practitioners apply intuitive risk stratification to operational decisions.
+
+The methodological framework generalizes beyond the Alzheimer's trial application. Any capacity-constrained service system where observable individual characteristics predict processing outcomes---oncology treatment centers where comorbidities affect infusion tolerance, surgical preparation units where anxiety indicators predict sedation requirements, or manufacturing cells where product specifications predict processing complexity---can instantiate our two-phase architecture by training domain-appropriate predictive models in Phase 1 and parameterizing service time distributions accordingly in Phase 2. The Alzheimer's trial application serves as a rigorous test case precisely because it presents the scheduling challenge in extreme form: patient heterogeneity is clinically documented and measurable through standardized cognitive assessments, yet operationally ignored by current trial management systems.
+
+The remainder of this paper proceeds as follows. Section 2 reviews the relevant literature across operations research healthcare scheduling, predictive machine learning in clinical contexts, and the emerging predict-then-optimize paradigm, identifying the specific gaps our framework addresses. Subsequent sections develop the machine learning prediction model, formulate the stochastic scheduling optimization, describe the solution methodology, present computational experiments on simulation-augmented test instances, and discuss managerial implications for clinical trial operations. Figure~\ref{fig:framework} illustrates the two-phase architecture of our prescriptive analytics framework.
+
+% FIGURE 1: Framework (place at end of Introduction)
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{fig_framework.pdf}
+    \caption{Two-phase prescriptive analytics framework: ML-predicted failure probabilities parameterize stochastic scheduling optimization.}
+    \label{fig:framework}
+\end{figure}
+ 
+\section{Literature Review}
+
+This research lies at the intersection of three streams: operations research models for healthcare scheduling under uncertainty, machine learning methods for clinical prediction, and the prescriptive analytics paradigm that bridges the two. We review each in turn, focusing on the treatment of patient heterogeneity and the mechanisms by which predictive information translates into operational decisions. This review establishes that while both scheduling optimization and clinical prediction have achieved considerable sophistication independently, their integration remains nascent, particularly for problems requiring stochastic formulations that capture outcome variance rather than expected-value approximations.
+
+% \subsection{Stochastic Scheduling in Healthcare Operations}
+
+Healthcare scheduling has been a central topic in operations research since the foundational reviews of \citet{cayirli2003outpatient} and \citet{gupta2008appointment}, with recent surveys \citep{youn2022planning, belien2025fifty} confirming its enduring importance and persistent translation gaps. The methodological core rests on stochastic programming formulations that balance waiting time, idle time, and overtime under service-time uncertainty. The canonical two-stage stochastic program of \citet{denton2003sequential} minimizes a weighted combination of expected patient waiting time, provider idle time, and overtime costs, with first-stage decisions specifying appointment times and second-stage recourse realizing outcomes conditional on service-time realizations. This formulation has spawned extensive methodological development: sample average approximation with established convergence properties \citep{kleywegt2002sample, mancilla2012sample}, parallel-resource and downstream-bed extensions \citep{denton2010optimal}, multi-stage progressive hedging for surgical scheduling \citep{gul2015progressive}, and recent emergency department staffing applications \citep{marchesi2025stochastic}.
+
+A common limitation runs through this literature: service-time distributions are parameterized at the procedure-type level, estimated from population-level historical data. \citet{denton2007optimization} demonstrated that scheduling high-variance procedures later in the day substantially reduces expected overtime costs---a variance-based sequencing insight that has influenced practice---but the variance in question is procedure-type-specific, not patient-specific. Even sophisticated subsequent contributions on multi-disciplinary clinic planning \citep{leeftink2019stochastic}, patient unpunctuality \citep{jiang2019stochastic}, and robust surgical scheduling \citep{neyshabouri2017two} maintain this aggregation level. Distributionally robust optimization (DRO) has emerged when distributions are imprecisely known \citep{jiang2017integer, shehadeh2021distributionally}, but these approaches construct ambiguity sets from population data rather than patient covariates, leaving patient-level heterogeneity unaddressed. MRI and diagnostic imaging scheduling has received comparatively limited attention \citep{qiu2019mri, sun2021stochastic, bouguerra2023integrating}, with patient-specific conditioning entirely absent. \citet{silvaaravena2025mri} recently applied digital twins and reinforcement learning to MRI scheduling, modeling machine failures as Bernoulli events, but failure probabilities were specified exogenously rather than predicted from patient characteristics. The job-shop scheduling analogy for clinical workflows appears in \citet{burdett2018flexible} and \citet{pham2008surgical} without patient-heterogeneous processing times. Our framework addresses this gap by using ML-predicted failure probabilities to parameterize individualized service-time distributions, enabling risk-adjusted scheduling that allocates resources proportionally to predicted failure probability.
+
+% \subsection{Predictive Machine Learning in Clinical Contexts}
+
+Clinical ML spans image quality assessment, no-show prediction, Alzheimer's biomarker analytics, and procedure duration forecasting. A consistent pattern emerges across these domains: models achieve high accuracy but terminate at prediction without translation into operational decisions, and simple stratification rules (e.g., age brackets) are inadequate substitutes when risk factors interact nonlinearly. In MRI quality assessment, \citet{esteban2017mriqc} introduced MRIQC using random forests on 64 engineered image quality metrics, with subsequent deep-learning approaches achieving 91--96\% accuracy in motion artifact detection \citep{vakli2023automatic, beljaards2024motion}. These tools operate post-acquisition, detecting artifacts in completed scans to inform quality control decisions rather than predicting scan failure prospectively from patient characteristics.
+
+The closest approach to pre-scan failure prediction appears in \citet{porembka2025disparities}, who analyzed over 68{,}000 MRI examinations and identified demographic and clinical predictors of motion artifacts---elderly patients, male patients, individuals with obesity, and patients examined in emergency or inpatient settings, with odds ratios of 1.5--3.3 and significant nonlinear interactions. The authors explicitly recommended ``accounting for motion-risk factors in scheduling, pre-scan counseling, and positioning protocols'' but did not construct a predictive model or propose scheduling optimization methods. Their findings underscore why simple stratification (e.g., adding buffer time for all patients over 75) is inadequate: risk factors interact in complex, nonlinear ways that only ML can capture from high-dimensional clinical data.
+
+Patient no-show prediction is the most developed predict-to-schedule pipeline in healthcare ML \citep{dantas2018noshows, asan2022pediatric, silva2023decision}, with \citet{samorani2021overbooked} notably bridging prediction and operations via fairness-constrained scheduling---though for no-show behavior and overbooking levels rather than service-time distributions. The Alzheimer's ML literature provides the clinical foundation for our predictive phase but targets endpoint prediction rather than operational outcomes. Multivariate ML models incorporating neuropsychological tests, demographics, and biomarkers substantially outperform simple clinical rules for predicting cognitive trajectories \citep{tam2022prediction}, while deep-learning stratification approaches project substantial cost savings \citep{birkenbihl2024deep} and AI-guided stratification has rescued previously failed trials \citep{vaghari2025amaranth}. For NACC-specific applications, \citet{song2023random} achieved 90.8\% concordance using six accessible clinical variables, \citet{elsappagh2024explainable} achieved 98.9\% F1 scores with interpretable models, and \citet{coupe2019mri} showed that combining MRI biomarkers with cognitive scores improves prediction over either modality alone. Crucially, every one of these papers targets endpoint prediction---cognitive decline, disease conversion, trial enrichment---not operational outcomes such as scan completion or session duration; the NACC dataset has never been repurposed for operational prediction despite containing precisely the clinical variables that would inform scan failure risk. Procedure duration prediction has gained traction primarily in surgical contexts \citep{bartek2019improving, master2023multicenter, spence2023scoping, martinez2021machine}, establishing the feasibility and value of patient-specific duration prediction, but no analogous models exist for MRI scan duration or binary failure prediction in cognitively impaired populations.
+
+% \subsection{The Prescriptive Analytics Gap}
+
+Three seminal contributions anchor the prediction--optimization integration literature. \citet{elmachtoub2022smart} introduced Smart Predict-then-Optimize (SPO) with decision-error loss functions enabling end-to-end training through optimization layers via differentiation of the argmin operator. \citet{bertsimas2020predictive} developed prescriptive analytics via ML methods---$k$-nearest neighbors, classification and regression trees, random forests---for conditional stochastic optimization, demonstrating substantial gains over sample average approximation in inventory contexts. \citet{ban2019big} proved that omitting available covariate features yields statistically inconsistent data-driven decisions, a theoretical result directly motivating our use of patient characteristics in scheduling. The comprehensive EJOR survey of \citet{sadana2025contextual} catalogued contextual stochastic optimization across decision rule, sequential predict-then-optimize, and integrated end-to-end paradigms, explicitly identifying healthcare as an underexplored application domain. \citet{deng2022predictive} formalized ``Predictive Stochastic Programming'' with statistical foundations for feeding ML-estimated conditional distributions into stochastic programs, providing theoretical grounding for our approach. End-to-end approaches face significant computational challenges when the optimization involves integer variables or recourse structures \citep{mandi2024decision}---precisely the characteristics of stochastic healthcare scheduling.
+
+Within healthcare specifically, the integration landscape reveals progression toward but not yet achieving full stochastic formulations with patient-specific distributional parameters. \citet{srinivas2018prescriptive} pioneered ML-driven outpatient scheduling but used heuristic rules rather than formal mathematical programming, with predicted risk informing overbooking levels rather than service-time distributions. \citet{salah2022predict} advanced to a predict-then-schedule framework using ML for both consultation length and no-show probability, achieving over 50\% waiting-time reduction in simulation and explicitly acknowledging that ``inputting predicted values directly into the optimization model may result in sub-optimal decisions when the model objective is nonlinear in predicted parameters''---precisely the expected-value trap our scenario-based formulation addresses. \citet{olya2022integrated} proposed deep multi-task learning feeding into two-stage stochastic optimization for chronic disease resource management---the closest existing work to true ML--stochastic programming integration in healthcare---but focused on aggregate capacity planning rather than individual appointment scheduling with patient-specific distributions. The most directly analogous works are \citet{gower2025predict}, who used neural-network duration predictions for surgical scheduling but as point estimates in deterministic optimization, and \citet{rottmann2025case}, who applied quantile regression forests to surgical planning and achieved 35\% cost improvement by capturing distributional information beyond point predictions---methodologically closest to our approach but in surgical rather than imaging contexts.
+
+Our framework addresses these gaps through a sequential two-phase architecture that, while not achieving the theoretical elegance of end-to-end training, offers practical advantages for real-time clinical decision support. The computational intractability of end-to-end approaches for job-shop-type scheduling with integer sequencing decisions and daily re-optimization requirements motivates this pragmatic choice. Our contribution lies not in the sequential architecture per se, but in the principled interface between phases: rather than feeding point predictions into deterministic optimization with procedure-level parameters \citep{salah2022predict}, we use ML-predicted failure probabilities to parameterize patient-specific service-time distributions. We present the general scenario-based stochastic formulation and implement a computationally tractable expected-value approximation that allocates buffer time proportionally to individualized risk, preserving the patient-specific heterogeneity that distinguishes our approach from population-level scheduling. The result is a framework that bridges machine learning prediction with operational scheduling while maintaining computational feasibility for real-time deployment.
+
+
+\newpage
+\section{Method}
+
+\subsection{Data Architecture}
+\label{sec:data_architecture}
+
+The primary objective of our prescriptive analytics framework is to mitigate the cascading delays caused by patient-induced disruptions during capacity-constrained clinical procedures. To operationalize this objective, we require a data pipeline capable of translating high-dimensional, multi-modal clinical data into patient-specific stochastic parameters---specifically, the failure probability $p_i$ for each patient $i$. This section details the data architecture developed to bridge the gap between predictive machine learning and prescriptive operations research, utilizing the Alzheimer's disease clinical trial setting as our motivating case study. The methodology generalizes to any clinical or service context where asynchronous observational data must be temporally aligned with operational outcomes.
+
+Clinical trials inherently generate asynchronous data: standardized clinical evaluations and neuroimaging procedures rarely occur on the same day due to resource availability and scheduling constraints. Traditional deterministic scheduling ignores this temporal misalignment entirely. To capture the patient's cognitive and behavioral state at the time of the scan accurately, our data pipeline executes a temporal-proximity merge, linking longitudinal clinical records to MRI quality control records via unique patient identifiers using a date-matching algorithm. The pipeline calculates the absolute temporal difference between the clinical interview date and the MRI study date, strictly filtering for proximal events occurring within a 90-day window. This temporal threshold balances two competing objectives: maximizing sample retention while ensuring that extracted biomarkers reflect the patient's operational state at the time of scheduling. Sensitivity analyses results confirm robustness to $\pm$30-day variations in this threshold. This operational alignment ensures that the predictive model is trained on the patient's actual state when the scheduling decision is made, preventing data leakage and ensuring logistical relevance of the estimated parameters. To ensure methodological reproducibility for practitioners utilizing multi-modal clinical databases, the data alignment and parameterization logic is codified in Algorithm~\ref{alg:data_pipeline}.
+
+\begin{algorithm}[H]
+\caption{Asynchronous Data Alignment and Stochastic Parameterization}
+\label{alg:data_pipeline}
+\begin{algorithmic}[1]
+\Require Clinical dataset $\mathcal{D}_{\text{clin}}$, Imaging dataset $\mathcal{D}_{\text{img}}$, temporal threshold $\tau_{\max}$ (default: 90 days)
+\Ensure Patient set $\mathcal{P}_{\text{sched}}$ with ML-predicted failure probabilities $\{p_k\}$ and service time distribution parameters $\{\Theta_k\}$
+
+\Statex \textbf{Phase 1: Historical Cohort Construction}
+\State $\mathcal{S}_{\text{match}} \gets \emptyset$ \Comment{Initialize matched training cohort}
+\ForAll{imaging record $r \in \mathcal{D}_{\text{img}}$}
+    \State $i \gets r.\texttt{patient\_id}$
+    \State $\mathcal{V}_i \gets$ \Call{ExtractVisits}{$\mathcal{D}_{\text{clin}}, i$} \Comment{All clinical visits for patient $i$}
+    \State $v^* \gets \arg\min_{v \in \mathcal{V}_i} \left| \texttt{Date}(r) - \texttt{Date}(v) \right|$
+    \State $\Delta t \gets \left| \texttt{Date}(r) - \texttt{Date}(v^*) \right|$
+    \If{$\Delta t \leq \tau_{\max}$}
+        \State $\mathbf{x}_i \gets$ \Call{ExtractBiomarkers}{$v^*$} \Comment{Cognitive, behavioral, pharmacological features}
+        \State $y_i \gets \mathbbm{1}\left[ r.\texttt{QC\_score} > 1 \right]$ \Comment{Binary failure indicator}
+        \State $\mathcal{S}_{\text{match}} \gets \mathcal{S}_{\text{match}} \cup \{(\mathbf{x}_i, y_i)\}$
+    \EndIf
+\EndFor
+
+\Statex \textbf{Phase 2: Predictive Model Training}
+\State $\mathcal{S}_{\text{imputed}} \gets$ \Call{ImputeMissing}{$\mathcal{S}_{\text{match}}$} \Comment{Median for continuous, mode for categorical}
+\State $f_{\theta} \gets$ \Call{TrainEnsembleClassifier}{$\mathcal{S}_{\text{imputed}}.\mathbf{X}, \mathcal{S}_{\text{imputed}}.\mathbf{y}$}
+
+\Statex \textbf{Phase 3: Operational Deployment}
+\State $\mathcal{P}_{\text{sched}} \gets \emptyset$
+\ForAll{patient $k$ scheduled for current operational day}
+    \State $p_k \gets f_{\theta}.\texttt{predict\_proba}(\mathbf{x}_k)$ \Comment{ML-predicted failure probability}
+    \State $\tilde{d}_k \gets d_k^0 + p_k \cdot \delta_k$ \Comment{Risk-adjusted expected duration}
+    \State $\Theta_k \gets \left\{ (d_k^0,\, 1 - p_k),\; (d_k^0 + \delta_k,\, p_k) \right\}$ \Comment{Bernoulli service time distribution}
+    \State $\mathcal{P}_{\text{sched}} \gets \mathcal{P}_{\text{sched}} \cup \left\{ (k, p_k, \Theta_k) \right\}$
+\EndFor
+
+\State \Return $\mathcal{P}_{\text{sched}}$
+\end{algorithmic}
+\end{algorithm}
+ 
+As illustrated in Algorithm~\ref{alg:data_pipeline}, the pipeline operates in three distinct phases to bridge the predictive-prescriptive divide. Lines 2--11 execute the temporal-proximity merge, iterating through the neuroimaging dataset to locate the nearest clinical evaluation for each historical patient. By enforcing the $\tau_{\max}$ condition (Line 7), the algorithm guarantees that the behavioral and cognitive features extracted ($\mathbf{x}_i$) accurately reflect the patient's operational reality, with the logistical failure indicator ($y_i$) assigned directly from quality control metrics. Line 13 applies missing value imputation using median values for continuous variables and mode values for categorical indicators, a standard approach for clinical data where missingness patterns are typically non-informative \citep{sterne2009multiple}. Line 14 trains the ensemble classifier $f_{\theta}$ on the matched historical cohort.
+
+Lines 16--21 represent the real-time operational deployment of the framework. For any daily schedule, the algorithm processes each patient's biomarkers to output the calibrated failure probability $p_k$ (Line 17). Line 18 computes the risk-adjusted expected duration $\tilde{d}_k$, while Line 19 constructs the patient-specific service time distribution parameters $\Theta_k$ rather than collapsing the probability into a point estimate. For patient $k$, the service time follows a Bernoulli-weighted mixture: with probability $(1 - p_k)$, the procedure completes in nominal duration $d_k^0$; with probability $p_k$, an extended duration $d_k^0 + \delta_k$ is required to accommodate repositioning, rescanning, or session termination protocols. These distributional parameters feed directly into the scheduling formulation developed in Section~\ref{sec:scheduling_formulation}, where we derive risk-adjusted expected durations that allocate buffer time proportionally to predicted failure probability.
+
+The feature space $\mathbf{x}_i$ explicitly targets clinical indicators of procedural distress, addressing the question of why machine learning is necessary rather than simple demographic stratification. Standardized cognitive assessments---the Mini-Mental State Examination (MMSE), Montreal Cognitive Assessment (MoCA), and Clinical Dementia Rating (CDR)---correlate with a patient's ability to follow complex procedural instructions requiring sustained attention. However, cognitive scores alone inadequately capture scan failure risk because behavioral symptoms exhibit independent predictive power. The Neuropsychiatric Inventory Questionnaire (NPI-Q) provides quantifiable indicators for agitation, anxiety, and motor disturbance---symptoms that directly precipitate motion artifacts regardless of cognitive status. Furthermore, the relationship between these predictors and failure probability is nonlinear: \citet{porembka2025disparities} documented significant interactions among age, clinical setting, and cognitive status that simple stratification rules (e.g., adding buffer time for all patients over 75) cannot capture. These interaction effects mathematically justify the machine learning component of our framework. Pharmacological features, including sedative and antipsychotic use, provide additional signal: sedatives may facilitate cooperation while antipsychotic prescriptions indicate symptom severity. The ensemble classifier $f_{\theta}$ learns the complex, nonlinear mapping from this high-dimensional feature space to failure probability, extracting predictive information that exceeds what any single variable or simple decision rule can approximate.
+
+The output of Algorithm~\ref{alg:data_pipeline} transforms the scheduling problem from a static heuristic operating on population averages to a patient-specific decision support system. Each patient $k$ enters the scheduling model not as an interchangeable unit with procedure-level duration, but as an individual characterized by the tuple $(k, p_k, \Theta_k)$. This parameterization enables the stochastic program to allocate scheduling resources---buffer times, sequencing decisions, and capacity reservations---in proportion to individualized risk, the core contribution of our prescriptive analytics framework\footnote{Python code available at \url{https://github.com/amoayedikia/clinical-scheduling}}.
+
+%==============================================================================
+% SECTION 3.2: FEATURE ENGINEERING AND PREDICTIVE MODELING
+%==============================================================================
+
+\subsection{Feature Engineering and Prediction}
+\label{sec:predictive_model}
+
+The predictive component of our framework transforms high-dimensional clinical assessments into patient-specific failure probabilities $p_i$ that parameterize the stochastic scheduling model. This section details the feature engineering process, model architecture, and validation methodology, demonstrating that machine learning captures nonlinear risk interactions that simple stratification rules cannot approximate.
+
+\subsubsection{Feature Space Construction}
+
+The feature space $\mathbf{x}_i$ for patient $i$ comprises four clinically-grounded categories, each targeting distinct mechanisms by which cognitive impairment manifests as procedural non-compliance. Table~\ref{tab:feature_categories} summarizes the feature taxonomy.
+
+\begin{table}[htbp]
+\centering
+\caption{Feature categories and clinical rationale for MRI failure prediction}
+\label{tab:feature_categories}
+\begin{tabular}{@{}p{3.5cm}p{4cm}p{5.5cm}@{}}
+\toprule
+\textbf{Category} & \textbf{Variables} & \textbf{Clinical Rationale} \\
+\midrule
+Cognitive Assessment & MoCA total score, MoCA education-corrected, Cognitive Impairment Index & Capacity to comprehend and retain procedural instructions requiring sustained attention \\
+\addlinespace
+Dementia Staging & CDR Sum of Boxes, CDR Global Score, CDR Impairment Indicator & Disease severity correlating with cooperation capacity and instruction-following ability \\
+\addlinespace
+Behavioral Symptoms (NPI-Q) & Agitation, Anxiety, Motor Disturbance, Irritability, Delusions, Hallucinations (presence and severity) & Direct behavioral predictors of motion artifacts independent of cognitive status \\
+\addlinespace
+Demographics \& Clinical Judgment & Age, Age Risk Factor, Clinician Concern Composite & Baseline risk factors and expert assessment of procedural cooperation likelihood \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The transition from MMSE to MoCA as the standard cognitive screening instrument in UDS Version 3 (post-2015) necessitates careful attention to instrument availability. Our temporal-proximity merge yields 93.8\% coverage for MoCA total scores compared to less than 1\% for MMSE in the matched cohort, reflecting the contemporary data collection protocols. The CDR achieves 100\% coverage as a required UDS element, while NPI-Q behavioral symptoms exhibit approximately 89\% availability.
+
+We construct several derived features to capture composite risk dimensions. The \textit{Cognitive Impairment Index} inverts the MoCA scale ($30 - \text{MoCA}$) so that higher values indicate greater impairment, aligning directionality across predictors. The \textit{Behavioral Risk Score} sums binary indicators across nine NPI-Q symptom domains (agitation, anxiety, motor disturbance, irritability, delusions, hallucinations, depression, apathy, disinhibition), providing a parsimonious composite of neuropsychiatric burden. The \textit{Severity-Weighted Behavioral Risk} multiplies symptom presence by reported severity (1--3 scale) for the four symptoms most directly implicated in scan non-compliance: agitation, anxiety, motor disturbance, and depression. Finally, the \textit{MRI-Specific Risk Score} isolates the three behavioral symptoms with strongest mechanistic links to motion artifacts: agitation (resistive behavior during positioning), motor disturbance (involuntary movement), and anxiety (panic response to scanner confinement).
+
+\subsubsection{Model Architecture and Training}
+
+We employ gradient boosting classification \citep{friedman2001greedy} as the predictive architecture, motivated by three considerations. First, gradient boosting naturally captures the nonlinear interactions among risk factors documented by \citet{porembka2025disparities}, who found that the combined effect of age and clinical setting exceeded additive predictions. Second, the sequential ensemble construction provides implicit regularization appropriate for the high-dimensional feature space relative to the limited positive class. Third, gradient boosting outputs well-calibrated probability estimates essential for downstream stochastic parameterization, unlike methods requiring post-hoc calibration.
+
+The class imbalance in clinical failure prediction necessitates careful attention to training methodology. While well-managed research settings with extensive pre-screening protocols yield very low failure rates (approximately 0.1\%), clinical practice with cognitively impaired populations exhibits substantially higher rates (10--30\%). Our simulation-augmented training cohort reflects the latter regime, with a 21.2\% failure rate calibrated to published clinical failure rates \citep{porembka2025disparities}. We employ class-weighted loss functions that penalize misclassification of the minority class proportionally to class frequency:
+\begin{equation}
+w_c = \frac{n}{2 \cdot n_c}
+\end{equation}
+where $n$ denotes total sample size and $n_c$ denotes the count of class $c \in \{0, 1\}$. This weighting scheme, equivalent to balanced class weights, ensures that the learning algorithm attends to failure cases despite their rarity.
+
+Missing values, arising from instrument non-administration or data collection irregularities coded via standard clinical database conventions (values 88, 95--99, -4), are imputed using median values for continuous variables and mode values for categorical indicators. This imputation strategy is appropriate given the predominantly non-informative missingness patterns in standardized clinical assessments \citep{sterne2009multiple}.
+
+\subsubsection{Feature Importance and Model Interpretation}
+
+Table~\ref{tab:feature_importance} presents the feature importance rankings from the trained gradient boosting model, quantified via mean decrease in impurity across the ensemble.
+
+\begin{table}[htbp]
+\centering
+\caption{Feature importance rankings from gradient boosting classifier}
+\label{tab:feature_importance}
+\begin{tabular}{@{}clc@{}}
+\toprule
+\textbf{Rank} & \textbf{Feature} & \textbf{Importance} \\
+\midrule
+1 & MoCA Total Score & 0.318 \\
+2 & Cognitive Impairment Index & 0.174 \\
+3 & CDR Sum of Boxes & 0.105 \\
+4 & Age Risk Factor & 0.100 \\
+5 & Age & 0.099 \\
+6 & CDR Severity & 0.064 \\
+7 & Behavioral Risk Score & 0.028 \\
+8 & Motor Disturbance Severity & 0.018 \\
+9 & Severity-Weighted Behavioral Risk & 0.017 \\
+10 & Depression & 0.013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The importance distribution reveals several operationally significant patterns. Cognitive assessment features dominate the rankings: MoCA Total Score (0.318) and the derived Cognitive Impairment Index (0.174) together contribute 49.2\% of total predictive signal, confirming that standardized cognitive screening captures the primary dimension of scan failure risk. Dementia staging via CDR contributes an additional 16.9\% (CDR Sum of Boxes: 0.105; CDR Severity: 0.064). Age-related features, while contributing meaningfully (Age Risk Factor: 0.100; Age: 0.099; combined 19.9\%), rank below cognitive assessments---a notable finding given that age-based heuristics are the most common scheduling adjustment in clinical practice. Behavioral symptoms (Behavioral Risk Score: 0.028; Motor Disturbance Severity: 0.018; Severity-Weighted Risk: 0.017) provide incremental signal, confirming that neuropsychiatric manifestations predict scan failure independently of cognitive status, though with smaller marginal contribution than cognitive measures.
+
+The distribution of importance across multiple feature categories---rather than concentration in a single predictor---provides the mathematical justification for machine learning over simple stratification. An age-bracket heuristic (e.g., adding 15 minutes for patients over 75) would capture only the 20\% of predictive signal residing in age-related features while ignoring the 80\% attributable to cognitive assessments, dementia staging, and behavioral symptoms. Moreover, the interactions among these features are nonlinear: a 72-year-old with severe agitation presents categorically different risk than a 72-year-old with intact behavioral regulation, yet both would receive identical treatment under age-based stratification.
+
+We note that the importance rankings in Table~\ref{tab:feature_importance} reflect the simulation's data-generating process, in which failure probabilities were constructed as nonlinear functions of the clinical feature space. The model's rediscovery of MoCA as the dominant predictor therefore confirms that the gradient boosting architecture can recover the designed feature-failure mapping from finite training data, rather than constituting an independent empirical discovery. Crucially, however, the \textit{mechanism} linking cognitive impairment to scan failure---whereby deficits in sustained attention, executive function, and motor control precipitate motion artifacts during MRI acquisition---is independently documented in the neuroimaging literature. \citet{porembka2025disparities} identified cognitive status as a significant predictor of motion artifacts across 68,000 MRI examinations, with odds ratios exceeding 2.0 for cognitively impaired patients. The simulation calibrates to these established clinical relationships. The contribution of our framework is therefore not discovering that MoCA predicts failure---that is a clinical finding---but demonstrating that when such predictions are embedded in a scheduling formulation, they yield quantifiable operational value that simple stratification rules cannot achieve.
+
+\subsubsection{Predictive Model Validation}
+
+To assess the predictive performance of the gradient boosting model, we conduct $10 \times 5$-fold repeated stratified cross-validation on simulation-augmented patient records. The simulation-augmented cohort comprises 2,000 synthetic patients with clinical profiles (age, MoCA, CDR, NPI-Q behavioral symptoms) drawn from distributions calibrated to published Alzheimer's disease population characteristics, and binary failure outcomes sampled from Bernoulli distributions with patient-specific probabilities reflecting the nonlinear relationship between clinical features and procedural risk. This yields a 21.2\% failure rate consistent with published MRI failure rates in cognitively impaired populations \citep{porembka2025disparities}. Table~\ref{tab:ml_cv_metrics} reports the cross-validated metrics.
+
+% Results from 50-fold repeated stratified cross-validation on 2,000 simulation-augmented patient records (425 failures, 21.2\% positive rate).
+
+\begin{table}[H]
+\centering
+\caption{Cross-validated predictive performance of the gradient boosting model for MRI scan failure prediction.}
+\label{tab:ml_cv_metrics}
+\begin{tabular}{lcccc}
+\toprule
+Metric & Mean & Std & \multicolumn{2}{c}{95\% CI} \\
+\midrule
+AUC-ROC & 0.6673 & 0.0324 & 0.6153 & 0.7242 \\
+PR-AUC & 0.3809 & 0.0405 & 0.3114 & 0.4468 \\
+Brier Score & 0.1575 & 0.0080 & 0.1458 & 0.1723 \\
+F1 Score & 0.4674 & 0.0376 & 0.3917 & 0.5302 \\
+Precision & 0.4335 & 0.0579 & 0.3315 & 0.5285 \\
+Recall & 0.5155 & 0.0460 & 0.4497 & 0.6065 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model achieves an AUC-ROC of 0.667 (95\% CI: 0.615--0.724), indicating meaningful discrimination between failure and non-failure cases. While not approaching the high discrimination typical of clinical diagnostic models, this level of predictive accuracy is sufficient for the scheduling application: the framework requires only that predicted probabilities preserve the relative risk ordering among patients, not that they achieve clinical-grade sensitivity. The Brier score of 0.158 falls below the prevalence rate (0.212), confirming that the model's probability estimates are informative beyond the base rate. The F1 score of 0.467 with balanced precision (0.434) and recall (0.516) reflects the inherent difficulty of predicting stochastic binary outcomes from clinical features---even a perfectly specified model would achieve imperfect classification when outcomes are governed by Bernoulli noise. The cross-validation evaluates whether the gradient boosting architecture can learn the nonlinear feature-failure mapping from finite training data, not whether the mapping itself is clinically valid---the latter is established independently in the neuroimaging literature \citep{porembka2025disparities}.
+
+\subsubsection{Probability Calibration and Operational Deployment}
+
+Figure~\ref{fig:calibration} presents the calibration reliability diagram from cross-validated predictions. The model exhibits reasonable calibration: predicted probabilities in the 0.15--0.50 range closely track observed failure frequencies, with slight underestimation at both extremes. The histogram of predicted probabilities shows clear separation between pass and fail distributions, confirming that the model produces differentiated risk estimates suitable for scheduling prioritization.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{fig_calibration.pdf}
+    \caption{Calibration reliability diagram from cross-validated predictions. Top: predicted vs.\ observed failure probability with 95\% bootstrap confidence band. Bottom: distribution of predicted probabilities by outcome class.}
+    \label{fig:calibration}
+\end{figure}
+
+For operational deployment, each patient scheduled for the current day is processed through the trained model to obtain $\hat{p}_i = f_\theta(\mathbf{x}_i)$. In our simulation-augmented cohort, predicted probabilities range from 0.01 to 0.96, with a mean of 0.21 reflecting the heterogeneous risk composition of the cohort. This probability parameterizes the patient-specific service time distribution:
+\begin{equation}
+\Theta_i = \left\{ \left(d_i^0,\, 1 - \hat{p}_i\right),\; \left(d_i^0 + \delta_i,\, \hat{p}_i\right) \right\}
+\label{eq:bernoulli_params}
+\end{equation}
+where $d_i^0$ denotes the nominal procedure duration and $\delta_i$ denotes the time penalty incurred upon failure (repositioning, rescanning, or session termination). This Bernoulli-weighted mixture distribution serves as the stochastic foundation for the scheduling optimization developed in Section~\ref{sec:scheduling_formulation}.
+
+
+%==============================================================================
+% SECTION 3.3: STOCHASTIC SCHEDULING FORMULATION
+%==============================================================================
+
+\subsection{Stochastic Multi-Modal Scheduling Formulation}
+\label{sec:scheduling_formulation}
+
+We formulate the clinical trial scheduling problem as a stochastic flexible job-shop model with patient-specific service time distributions derived from the predictive component. This section presents the mathematical program, discusses the relationship between scenario-based stochastic programming and the computationally tractable expected-value formulation we implement, and establishes the theoretical foundations for the scheduling optimization.
+
+\subsubsection{Problem Setting and Notation}
+
+Consider a clinical research facility scheduling $n$ patients across $m$ sequential diagnostic modalities on a given operational day. Each patient must complete all modalities in a fixed precedence order dictated by clinical protocol---for example, the UDS clinical interview must precede MRI neuroimaging, which must precede CSF lumbar puncture. Each modality is serviced by a single resource (one interview room, one MRI scanner, one procedure room), creating resource contention that the scheduling model must resolve.
+
+Let $\mathcal{I} = \{1, 2, \ldots, n\}$ denote the set of patients and $\mathcal{J} = \{1, 2, \ldots, m\}$ denote the set of clinical resources (modalities). For each patient $i \in \mathcal{I}$, define the ordered sequence of operations $\mathcal{S}_i = (O_{i,1}, O_{i,2}, \ldots, O_{i,m})$ where $O_{i,s}$ denotes the $s$-th operation for patient $i$, requiring resource $j(s) \in \mathcal{J}$.
+
+\subsubsection{Stochastic Service Time Model}
+
+The distinguishing feature of our formulation is the patient-specific stochastic characterization of service times. For patient $i$ on resource $j$, the service time $D_{ij}$ is a random variable following the Bernoulli-weighted distribution:
+\begin{equation}
+D_{ij} = 
+\begin{cases}
+d_{ij}^0 & \text{with probability } (1 - p_{ij}) \\
+d_{ij}^0 + \delta_{ij} & \text{with probability } p_{ij}
+\end{cases}
+\label{eq:service_time_rv}
+\end{equation}
+
+where $d_{ij}^0$ denotes the nominal processing time of patient $i$ on resource $j$, $p_{ij}$ denotes the ML-predicted failure probability, and $\delta_{ij}$ denotes the time penalty incurred upon failure (repositioning, rescanning, or session termination).
+
+The failure probabilities $p_{ij}$ derive from the predictive model of Section~\ref{sec:predictive_model}. For the MRI resource, $p_{i,\text{MRI}} = \hat{p}_i$ directly. For other resources, we scale proportionally based on the procedural demands each modality places on patient cooperation: $p_{i,\text{UDS}} = 0.3 \cdot \hat{p}_i$ and $p_{i,\text{CSF}} = 0.8 \cdot \hat{p}_i$. The UDS clinical interview is conducted conversationally and tolerates brief lapses in attention or mild agitation without requiring procedure restart; the interviewer can pause, redirect, and adapt pacing to the patient's state, substantially reducing the probability that cognitive or behavioral impairment precipitates procedural failure. In contrast, CSF collection via lumbar puncture requires the patient to maintain a sustained flexed position for the duration of needle insertion and fluid collection, imposing physical stillness demands comparable to MRI acquisition. The 0.8 scaling factor reflects that while lumbar puncture is shorter than MRI, the consequences of patient movement during needle placement are clinically significant. We note that these scaling factors represent informed clinical judgment rather than empirically estimated parameters; sensitivity analyses varying these factors by $\pm$50\% confirm that the main findings---prediction dominating optimization and LPT achieving near-optimal performance---are robust to the specific scaling values chosen (see Section~\ref{sec:value_analysis}).
+
+\subsubsection{Decision Variables}
+
+The scheduling model determines:
+\begin{align}
+x_{ij} &\geq 0 && \text{Start time of patient } i \text{ on resource } j \\
+y_{ii'j} &\in \{0, 1\} && \text{1 if patient } i \text{ precedes patient } i' \text{ on resource } j \\
+C_{\max} &\geq 0 && \text{Makespan (completion time of last operation)} \\
+W_i &\geq 0 && \text{Total waiting time for patient } i \text{ between operations}
+\end{align}
+
+
+To illustrate the operational meaning of the stochastic service time model, consider an MRI scan with nominal duration $d^0 = 45$ minutes, failure penalty $\delta = 30$ minutes, and ML-predicted failure probability $p_i = 0.20$. With probability 0.80, the scan completes successfully in 45 minutes; with probability 0.20, a failure event extends the session to 75 minutes. The risk-adjusted expected duration is $\tilde{d} = 45 + 0.20 \times 30 = 51$ minutes, allocating 6 minutes of buffer proportional to the patient's individualized risk. A low-risk patient with $p_i = 0.05$ would receive only 1.5 minutes of buffer ($\tilde{d} = 46.5$), while a high-risk patient with $p_i = 0.45$ would receive 13.5 minutes ($\tilde{d} = 58.5$). This proportional allocation is the mechanism by which ML-predicted probabilities translate into differentiated scheduling decisions.
+
+
+\subsubsection{Scenario-Based Stochastic Programming Formulation}
+
+The theoretically complete formulation employs sample average approximation (SAA), generating $K$ scenarios $\omega_1, \ldots, \omega_K$ by sampling from the patient-specific service time distributions \eqref{eq:service_time_rv}. For each scenario $\omega_k$, the realized service time $d_{ij}(\omega_k)$ equals either $d_{ij}^0$ or $d_{ij}^0 + \delta_{ij}$ according to independent Bernoulli draws with success probability $p_{ij}$.
+
+The two-stage stochastic program minimizes expected costs across scenarios:
+\begin{equation}
+\min_{x, y} \; \frac{1}{K} \sum_{k=1}^{K} \left[ C_{\max}(\omega_k) + \lambda \sum_{i \in \mathcal{I}} W_i(\omega_k) \right]
+\label{eq:saa_objective}
+\end{equation}
+where $\lambda \geq 0$ weights the trade-off between clinic efficiency (makespan) and patient experience (waiting time).
+
+The scenario-dependent constraints for each $\omega_k$ include precedence requirements ensuring operation sequence, disjunctive constraints preventing resource conflicts, and linking constraints defining makespan and waiting times in terms of realized service durations $d_{ij}(\omega_k)$.
+
+\subsubsection{Expected-Value Formulation}
+
+While scenario-based SAA preserves the full distributional information encoded in the ML-predicted probabilities, it introduces significant computational burden: the number of binary sequencing variables scales as $O(n^2 m K)$, rendering large instances intractable for real-time operational deployment. Following the computational tractability arguments established in the stochastic scheduling literature \citep{denton2003sequential, mancilla2012sample}, we implement an expected-value formulation that captures patient-specific risk heterogeneity while maintaining practical solvability.
+
+The expected-value formulation replaces the random service time $D_{ij}$ with its expectation:
+\begin{equation}
+\tilde{d}_{ij} = \mathbb{E}[D_{ij}] = d_{ij}^0 + p_{ij} \cdot \delta_{ij}
+\label{eq:expected_duration}
+\end{equation}
+
+This risk-adjusted duration allocates buffer time proportionally to predicted failure probability: a patient with $p_{ij} = 0.30$ and penalty $\delta_{ij} = 30$ minutes receives $0.30 \times 30 = 9$ minutes of expected buffer beyond the nominal duration, while a low-risk patient with $p_{ij} = 0.02$ receives only 0.6 minutes.
+
+The deterministic equivalent formulation becomes:
+
+\textbf{Objective Function:}
+\begin{equation}
+\min \; Z = C_{\max} + \lambda \sum_{i \in \mathcal{I}} W_i
+\label{eq:objective}
+\end{equation}
+
+\textbf{Precedence Constraints:} Each patient must complete their current operation before beginning the next in sequence. For patient $i$ and consecutive operations on resources $j$ (current) and $k$ (next):
+\begin{equation}
+x_{ik} \geq x_{ij} + \tilde{d}_{ij} \quad \forall i \in \mathcal{I}, \; \forall (j, k) \in \mathcal{S}_i
+\label{eq:precedence}
+\end{equation}
+
+\textbf{Patient Waiting Time Definition:} The waiting time for patient $i$ accumulates across transitions between consecutive operations:
+\begin{equation}
+W_i = \sum_{(j,k) \in \mathcal{S}_i} \left( x_{ik} - x_{ij} - \tilde{d}_{ij} \right) \quad \forall i \in \mathcal{I}
+\label{eq:wait_time}
+\end{equation}
+
+\textbf{Disjunctive Resource Constraints:} Each resource can process only one patient at a time. For any pair of patients $i, i' \in \mathcal{I}$ with $i \neq i'$ requiring resource $j$, exactly one must precede the other:
+\begin{align}
+x_{i'j} &\geq x_{ij} + \tilde{d}_{ij} - M(1 - y_{ii'j}) \label{eq:disjunctive1} \\
+x_{ij} &\geq x_{i'j} + \tilde{d}_{i'j} - M \cdot y_{ii'j} \label{eq:disjunctive2}
+\end{align}
+where $M$ is a sufficiently large constant. When $y_{ii'j} = 1$, constraint \eqref{eq:disjunctive1} enforces that patient $i$ precedes patient $i'$ on resource $j$, while constraint \eqref{eq:disjunctive2} becomes redundant. The converse holds when $y_{ii'j} = 0$.
+
+\textbf{Makespan Definition:}
+\begin{equation}
+C_{\max} \geq x_{ij} + \tilde{d}_{ij} \quad \forall i \in \mathcal{I}, \; \forall j \in \mathcal{J}
+\label{eq:makespan}
+\end{equation}
+
+\textbf{Variable Domains:}
+\begin{align}
+x_{ij} &\geq 0 && \forall i \in \mathcal{I}, \; \forall j \in \mathcal{J} \\
+y_{ii'j} &\in \{0, 1\} && \forall i \neq i' \in \mathcal{I}, \; \forall j \in \mathcal{J} \\
+C_{\max}, W_i &\geq 0 && \forall i \in \mathcal{I}
+\end{align}
+
+\subsubsection{Theoretical Justification for Expected-Value Approximation}
+
+The expected-value formulation \eqref{eq:expected_duration} constitutes a first-order approximation to the scenario-based stochastic program \eqref{eq:saa_objective}. Several theoretical and practical considerations justify this approximation for our application context.
+
+First, \citet{denton2003sequential} established that for convex piecewise-linear cost structures---which characterize waiting time and overtime costs---the expected-value solution provides a bound on the stochastic optimum. While our job-shop formulation with integer sequencing variables is not convex, the insight that expected-value solutions perform well when variance is moderate relative to means remains applicable.
+
+Second, the Bernoulli service time distribution \eqref{eq:service_time_rv} has coefficient of variation:
+\begin{equation}
+\text{CV}_{ij} = \frac{\sqrt{p_{ij}(1-p_{ij})} \cdot \delta_{ij}}{d_{ij}^0 + p_{ij} \cdot \delta_{ij}}
+\end{equation}
+For typical parameter values ($d_{ij}^0 = 45$ min, $\delta_{ij} = 30$ min, $p_{ij} \leq 0.30$), this coefficient of variation remains below 0.25, indicating that the expected-value summary captures most of the distributional information relevant to sequencing decisions.
+
+Third, the sequencing decisions encoded in the binary variables $y_{ii'j}$ are robust to moderate perturbations in duration estimates. The optimal sequence depends on the relative ordering of risk-adjusted durations $\tilde{d}_{ij}$ across patients, which is preserved under expected-value computation. Scenario-based approaches would yield different makespan realizations across scenarios but similar optimal sequences, suggesting that the expected-value formulation captures the decision-relevant structure.
+
+Fourth, operational deployment requires solution times compatible with daily scheduling cycles. The expected-value formulation with $n = 10$ patients and $m = 3$ resources yields approximately 100 constraints and 50 binary variables, solvable to optimality within 60 seconds using commercial mixed-integer programming solvers. Scenario-based SAA with $K = 100$ scenarios would inflate the problem by two orders of magnitude, exceeding practical time limits for real-time decision support.
+
+\subsubsection{Symmetry-Breaking and Computational Enhancements}
+
+The disjunctive constraints \eqref{eq:disjunctive1}--\eqref{eq:disjunctive2} introduce substantial symmetry: any permutation of patients with identical risk-adjusted durations yields equivalent solutions. To accelerate convergence, we impose symmetry-breaking constraints that fix the sequencing of patients whose risk ordering is unambiguous:
+\begin{equation}
+y_{ii'j} = 1 \quad \text{if } \tilde{d}_{ij} > \tilde{d}_{i'j} + \epsilon
+\label{eq:symmetry_breaking}
+\end{equation}
+for a small tolerance $\epsilon > 0$. This constraint encodes the intuition that higher-risk patients (with longer expected durations) should be scheduled earlier, providing buffer time for potential delays without cascading effects on subsequent patients.
+
+Additionally, we construct an initial feasible solution using a longest-processing-time-first (LPT) heuristic, warm-starting the branch-and-bound search. The LPT solution provides an upper bound that enables aggressive pruning of the search tree.
+
+\subsubsection{Managerial Interpretation}
+
+The formulation embeds several operationally significant features. The risk-adjusted durations $\tilde{d}_{ij}$ translate ML-predicted failure probabilities into tangible schedule modifications: a patient identified as high-risk receives proportionally more allocated time, reducing the probability of cascading delays. The waiting time penalty $\lambda$ enables clinic managers to balance institutional efficiency against patient experience---higher $\lambda$ values produce schedules with minimal inter-procedure gaps at the cost of potentially extended makespans. The precedence constraints encode clinical protocol requirements, ensuring that data collection sequences mandated by trial design are respected.
+
+The symmetry-breaking constraints \eqref{eq:symmetry_breaking} operationalize a risk-management heuristic: scheduling high-risk patients early in the day provides recovery time if failures occur, while low-risk patients scheduled later face minimal delay probability. This sequencing logic emerges naturally from the optimization rather than requiring manual specification, demonstrating how the prescriptive framework translates predictive information into actionable scheduling decisions.
+
+%==============================================================================
+% SECTION 4: COMPUTATIONAL EXPERIMENTS
+%==============================================================================
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+This section evaluates the prescriptive analytics framework through computational experiments designed to decompose scheduling performance into its constituent sources of value. By systematically varying both the prediction method and the optimization approach, we isolate the relative contributions of prediction quality, feature richness, and optimization sophistication. Seven scheduling methods are compared, ranging from no prediction (deterministic) through simple stratification (age-based rules) to full ML prediction using cognitive and behavioral biomarkers, paired with both heuristic sequencing and mixed-integer programming optimization.
+
+\subsection{Experimental Setup}
+\label{sec:experimental_setup}
+
+We generate patient cohorts using simulation-augmented clinical profiles calibrated to published distributions for Alzheimer's disease patient populations. Each experimental instance comprises $n = 10$ patients sampled to reflect realistic cohort heterogeneity, with approximately 25\% classified as high-risk ($p_i > 0.25$) based on their clinical profiles. Patient features (age, MoCA, CDR, NPI-Q behavioral symptoms) are drawn from clinically realistic distributions, and failure probabilities ranging from 0.03 to 0.55 are determined by the nonlinear relationship between these features and procedural risk documented by \citet{porembka2025disparities}. This simulation-augmented approach is necessary because well-managed research settings, with their extensive pre-screening protocols, yield near-zero observed failure rates that do not reflect the 10--30\% rates observed in routine clinical practice with cognitively impaired populations.
+
+Table~\ref{tab:resource_params} summarizes the clinical resource parameters. The UDS clinical interview requires 60 minutes base duration with a 15-minute failure penalty. MRI neuroimaging requires 45 minutes base duration with a 30-minute penalty, serving as the primary bottleneck resource. CSF lumbar puncture requires 30 minutes with a 20-minute penalty. Risk scaling factors adjust the MRI-derived failure probability for each resource based on procedural tolerance for patient movement.
+
+\begin{table}[htbp]
+\centering
+\caption{Clinical resource parameters}
+\label{tab:resource_params}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Resource} & \textbf{Base Duration} $d^0$ & \textbf{Failure Penalty} $\delta$ & \textbf{Risk Scale} \\
+\midrule
+UDS Clinical Interview & 60 min & 15 min & 0.3 \\
+MRI Neuroimaging & 45 min & 30 min & 1.0 \\
+CSF Lumbar Puncture & 30 min & 20 min & 0.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All experiments were conducted using Python 3.11 with the PuLP optimization library interfacing the CBC mixed-integer programming solver. Schedule quality is assessed through Monte Carlo simulation: for each schedule, we simulate 100 stochastic realizations where actual service times are drawn from the Bernoulli distributions parameterized by true failure probabilities. This evaluation captures the distinction between planned performance and realized performance under operational variability. We report expected makespan (mean across simulations) and overtime probability (fraction of simulations exceeding planned makespan by more than 5\%).
+
+\subsection{Baseline Methods}
+\label{sec:baselines}
+
+We compare seven scheduling approaches that differ in their use of predictive information. The Stochastic-MILP method represents our proposed framework, using ML-predicted failure probabilities to compute risk-adjusted expected durations and optimizing via mixed-integer programming. LPT (Longest Processing Time) orders patients by total risk-adjusted duration with highest-risk patients first, representing a simple heuristic that exploits ML predictions without optimization. SPT (Shortest Processing Time) applies the reverse ordering, scheduling lowest-risk patients first. FCFS (First-Come-First-Served) maintains arrival order with risk-adjusted durations, representing typical clinical practice with ML predictions but no intelligent sequencing. Random ordering provides a lower bound, averaged over 10 samples.
+
+Two baselines specifically test the value of ML predictions. The Deterministic baseline uses nominal durations only, ignoring failure risk entirely and thus requiring no predictive model. The Age-Stratified baseline applies rule-based buffers without machine learning: 5\% of the failure penalty for ages 65--74, 15\% for ages 75--84, and 25\% for ages 85+. This baseline embodies the clinical intuition that older patients require more scheduling slack, testing whether simple demographic rules suffice or whether the full ML feature set provides incremental value.
+
+\subsection{Results}
+\label{sec:results}
+
+Table~\ref{tab:baseline_results} presents results from 100 independent replications, each with a randomly sampled 10-patient cohort evaluated through 100 Monte Carlo simulations.
+
+\begin{table}[htbp]
+\centering
+\caption{Baseline comparison results (100 replications, 10 patients each, 100 simulations per schedule). Values show mean $\pm$ 95\% confidence interval.}
+\label{tab:baseline_results}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Method} & \textbf{Expected Makespan (min)} & \textbf{Overtime Probability} \\
+\midrule
+LPT & 689.0 $\pm$ 0.4 & 3.0\% $\pm$ 0.4\% \\
+Stochastic-MILP & 689.1 $\pm$ 0.4 & 3.1\% $\pm$ 0.4\% \\
+Deterministic & 689.0 $\pm$ 0.4 & 9.4\% $\pm$ 0.8\% \\
+Random & 695.4 $\pm$ 0.7 & 6.2\% $\pm$ 0.5\% \\
+FCFS & 698.1 $\pm$ 1.2 & 7.0\% $\pm$ 0.7\% \\
+SPT & 715.0 $\pm$ 0.7 & 9.8\% $\pm$ 0.7\% \\
+Age-Stratified & 692.4 $\pm$ 0.6 & 12.2\% $\pm$ 1.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a striking pattern: the primary determinant of scheduling performance is whether ML predictions are used effectively, not whether optimization is employed. The LPT heuristic and Stochastic-MILP achieve statistically indistinguishable performance (3.0\% vs 3.1\% overtime, $p > 0.05$), both substantially outperforming all other methods. This convergence occurs because the symmetry-breaking constraints in our MILP formulation encode risk-first sequencing logic, and for the instances tested, this sequencing dominates the objective. The practical implication is significant: practitioners can implement a simple sorting rule---schedule patients in decreasing order of predicted risk---and achieve near-optimal performance without requiring optimization software.
+
+However, this simplicity depends critically on having accurate patient-specific predictions. The Age-Stratified baseline, which uses only patient age to allocate scheduling buffer, achieves 12.2\% overtime probability---four times higher than methods using full ML predictions. The 9.2 percentage point improvement from Age-Stratified to LPT quantifies the value of ML prediction over intuitive heuristics, arising because age alone is a weak proxy for the failure risk that cognitive and behavioral features capture (Section~\ref{sec:value_analysis}).
+
+The Deterministic baseline presents an instructive case. Its expected makespan matches LPT and Stochastic-MILP (689 minutes), yet its overtime probability is three times higher (9.4\% vs 3.0\%). This occurs because Deterministic schedules ignore variability: they appear efficient on paper but provide no buffer for failure events. When failures occur, they cascade through the schedule.
+
+\subsubsection{Computational Efficiency}
+
+Table~\ref{tab:computation_times} reports wall-clock computation times across 50 replications, quantifying the practical cost of optimization sophistication.
+
+% Heuristic methods solve in under one millisecond; the Stochastic-MILP requires substantially more time due to integer programming.
+
+\begin{table}[H]
+\centering
+\caption{Computation times for scheduling methods ($n = 10$ patients, 50 replications).}
+\label{tab:computation_times}
+\begin{tabular}{lcccc}
+\toprule
+Method & Mean (s) & Std (s) & Min (s) & Max (s) \\
+\midrule
+FCFS & 0.0009 & 0.0000 & 0.0009 & 0.0010 \\
+SPT & 0.0006 & 0.0000 & 0.0006 & 0.0007 \\
+LPT & 0.0006 & 0.0000 & 0.0006 & 0.0008 \\
+Deterministic & 0.0006 & 0.0000 & 0.0006 & 0.0008 \\
+Age-Stratified & 0.0006 & 0.0000 & 0.0006 & 0.0009 \\
+Random & 0.0059 & 0.0001 & 0.0057 & 0.0063 \\
+Stochastic-MILP & 20.7819 & 19.3779 & 0.1277 & 60.1351 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The computational disparity is striking. All heuristic methods solve in under one millisecond, while the Stochastic-MILP averages 20.8 seconds with a maximum of 60.1 seconds (reaching the solver timeout). The high variance in MILP solve times (standard deviation of 19.4 seconds) reflects the branch-and-bound search tree's sensitivity to patient-specific parameter values. Given the statistically indistinguishable scheduling quality between LPT and Stochastic-MILP (Table~\ref{tab:baseline_results}), this $35{,}000\times$ computational overhead yields no measurable operational benefit for the problem instances tested. For real-time deployment where schedules must be computed daily, the sub-millisecond LPT solution is operationally preferable.
+
+\subsection{Scalability Analysis}
+\label{sec:scalability}
+
+The baseline comparison (Table~\ref{tab:baseline_results}) established LPT-MILP equivalence for $n = 10$ patients. A natural question is whether this equivalence holds at realistic clinic volumes, where daily patient throughput may reach 20--50 individuals. Table~\ref{tab:scalability} reports results from scaling experiments with $n \in \{10, 20, 30, 50\}$ patients, using 10 replications per size with solver timeout set to $\max(60, 6n)$ seconds.
+% MILP solve time reports mean $\pm$ std; LPT solve time is constant at approximately 2~ms. The makespan gap is computed as $(\bar{C}_{\text{MILP}} - \bar{C}_{\text{LPT}})/\bar{C}_{\text{LPT}} \times 100$. MILP did not complete for $n = 50$.
+\begin{table}[H]
+\centering
+\caption{Scalability comparison: Stochastic-MILP vs.\ LPT across problem sizes (10 replications per size).}
+\label{tab:scalability}
+\begin{tabular}{@{}rrrccccr@{}}
+\toprule
+$n$ & Variables & Constraints & MILP Time (s) & LPT Time & Optimal & MILP Makespan & LPT Makespan \\
+\midrule
+10 & 176 & 320 & 17.1 $\pm$ 17.3 & 2.1 ms & 9/10 & 687.1 & 687.1 \\
+20 & 651 & 1{,}240 & 120.2 $\pm$ 0.0 & 2.1 ms & 0/10 & 1{,}297.0 & 1{,}297.0 \\
+30 & 1{,}426 & 2{,}760 & 180.2 $\pm$ 0.0 & 2.2 ms & 0/10 & 1{,}913.1 & 1{,}905.7 \\
+50 & --- & --- & --- & 2.3 ms & --- & --- & 3{,}124.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The scalability results reveal three patterns that substantially strengthen the practical case for LPT. First, the MILP formulation becomes computationally intractable at $n \geq 20$: every instance reaches the solver timeout, and the problem grows quadratically in both decision variables (from 176 to 1{,}426) and constraints (from 320 to 2{,}760). At $n = 50$, the experiment did not produce results within the allocated time. LPT, by contrast, solves in approximately 2~milliseconds regardless of instance size, maintaining a constant-time profile that is operationally suitable for any realistic clinic volume.
+
+Second, the LPT-MILP equivalence that held at $n = 10$ persists at $n = 20$, where the timed-out MILP solutions match LPT makespan exactly (1{,}297.0 minutes). This occurs because the branch-and-bound solver discovers the risk-first ordering as a feasible solution early in its search but cannot prove optimality within the time limit. However, at $n = 30$, a divergence emerges---and it favors LPT. The MILP's mean makespan (1{,}913.1 minutes) exceeds LPT (1{,}905.7 minutes) by 0.39\%, with individual replications showing gaps as large as 27 minutes. This inversion occurs because the solver, unable to explore sufficient nodes within the timeout, sometimes terminates with an inferior feasible solution that the simple LPT heuristic avoids entirely.
+
+Third, LPT overtime probability decreases monotonically with cohort size: from 2.8\% at $n = 10$ to 0.2\% at $n = 20$ and 0.0\% at $n \geq 30$. This reflects the law of large numbers---as the number of patients increases, the realized proportion of failures converges to its expectation, reducing tail risk. The practical implication is that risk-first sequencing becomes \textit{more} effective, not less, at the larger cohort sizes characteristic of real clinical operations.
+
+These findings confirm that LPT is not merely a computationally convenient approximation but the operationally preferred method for realistic clinic sizes. The MILP formulation retains value as a theoretical benchmark for certifying heuristic quality at small scale, but it cannot serve as a practical scheduling tool beyond $n = 20$ patients without substantially more powerful solver infrastructure or problem-specific decomposition methods.
+
+
+\subsection{Value Decomposition}
+\label{sec:value_analysis}
+
+Table~\ref{tab:value_analysis} decomposes the performance improvement into components attributable to prediction quality versus optimization sophistication. The following decomposition quantifies the \textit{structural} contributions of prediction quality and optimization sophistication under the calibrated simulation parameters. While the specific magnitudes would vary with empirical failure rates and feature distributions, the qualitative ordering---prediction dominating optimization---is robust across the parameter ranges tested in our sensitivity analyses (Section~\ref{sec:value_analysis}).
+
+\begin{table}[htbp]
+\centering
+\caption{Value decomposition: contributions of ML prediction and optimization}
+\label{tab:value_analysis}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Comparison} & \textbf{Overtime Reduction} & \textbf{Interpretation} \\
+\midrule
+LPT vs.\ Age-Stratified & 9.2 pp & Value of ML prediction \\
+LPT vs.\ Deterministic & 6.4 pp & Value of risk-adjustment \\
+Stochastic-MILP vs.\ LPT & 0.1 pp & Value of optimization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The decomposition is clear: nearly all performance improvement derives from ML prediction quality, not optimization sophistication. The transition from Age-Stratified to LPT---both using heuristic sequencing but differing in prediction source---yields 9.2 percentage points of overtime reduction. The transition from LPT to Stochastic-MILP---same predictions but adding optimization---yields only 0.1 percentage points, statistically indistinguishable from zero.
+
+To further isolate the source of predictive value, we conducted an additional experiment comparing four prediction approaches: Full ML using the complete feature set, Age-Only ML using only age-derived features, Age-Stratified using rule-based buffers, and No Prediction using deterministic durations. Table~\ref{tab:ml_value} presents results from 50 independent replications.
+
+% Age-Only ML uses gradient boosting with only age-derived features; Full ML includes cognitive assessments and behavioral symptoms.
+
+\begin{table}[H]
+\centering
+\caption{Value of ML components (50 replications, 100 simulations each). }
+\label{tab:ml_value}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Prediction Approach} & \textbf{Overtime Probability} & \textbf{vs.\ Full ML} \\
+\midrule
+Full ML & 3.1\% $\pm$ 0.6\% & --- \\
+No Prediction & 8.7\% $\pm$ 1.1\% & +5.6 pp \\
+Age-Stratified & 11.7\% $\pm$ 1.4\% & +8.5 pp \\
+Age-Only ML & 12.0\% $\pm$ 1.6\% & +8.9 pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a striking finding: Age-Only ML performs no better than Age-Stratified rules (12.0\% vs 11.7\% overtime, $p > 0.05$). Applying gradient boosting to age features alone provides no advantage over simple stratification. This demonstrates that the value of machine learning derives not from model sophistication but from incorporating cognitive and behavioral biomarkers that age-based approaches cannot capture. The 8.9 percentage point improvement from Age-Only to Full ML quantifies the predictive contribution of MoCA scores, CDR staging, and NPI-Q behavioral symptoms.
+
+An unexpected finding is that No Prediction outperforms both age-based approaches (8.7\% vs 12\% overtime). This occurs because age-based methods actively misallocate scheduling buffers: they assign insufficient slack to cognitively impaired younger patients while over-buffering healthy older patients. The No Prediction baseline, by treating all patients identically, avoids this systematic misallocation---though it still underperforms Full ML by 5.6 percentage points.
+
+The magnitude of the gap between Age-Only and Full ML warrants explanation. As the feature importance analysis in Section~\ref{sec:predictive_model} established, approximately 80\% of predictive signal resides in non-age features---cognitive assessments, dementia staging, and behavioral symptoms. Consider two 78-year-old patients: one with MoCA score 27, CDR 0, and no behavioral symptoms; another with MoCA score 18, CDR 2, and documented agitation. Their true failure probabilities might be 0.08 and 0.45 respectively, yet age-based methods assign identical scheduling buffers. The Full ML model captures these clinically meaningful distinctions, producing individualized risk estimates that enable effective differentiation in scheduling priority.
+
+To assess practical deployment considerations, we tested robustness to prediction error by adding Gaussian noise ($\sigma = 0.05$ to $0.20$) to the ML-predicted probabilities before scheduling, then evaluating against true failure rates. The results indicate graceful degradation: overtime probability increases from 3.1\% with perfect predictions to 5.7\% with 5\% noise and plateaus at approximately 7.6\% for noise levels of 10\% or higher. Notably, even with 20\% prediction error, the ML-based approach (7.6\% overtime) still outperforms Age-Stratified scheduling (11.7\% overtime). This robustness suggests that the framework retains practical value even when deployed with imperfect predictions, as would be expected in real-world clinical settings where model calibration may drift over time.
+
+The benefit of risk-adjusted scheduling also depends on cohort composition. We varied the proportion of high-risk patients from 0\% to 50\% and compared the ML-based approach against deterministic scheduling. The improvement grows substantially with cohort risk: at 0\% high-risk patients, the overtime reduction is 1.2 percentage points (5.8\% to 4.6\%); at 50\% high-risk, it reaches 13.6 percentage points (19.4\% to 5.8\%). While deterministic scheduling degrades sharply as cohort risk increases, the ML-based approach remains stable at 4--6\% overtime across all compositions. This pattern suggests that facilities serving high-risk populations---such as specialized dementia clinics or late-stage Alzheimer's trials---would realize the greatest operational benefit from implementing risk-adjusted scheduling.
+
+
+%==============================================================================
+% SECTION 5: DISCUSSION
+%==============================================================================
+
+\section{Discussion}
+\label{sec:discussion}
+
+The computational experiments provide a clear answer to the motivating question: for clinical scheduling with patient-specific risk heterogeneity, the primary source of operational value is prediction quality---specifically, the richness of the clinical feature set---not optimization sophistication. We organize this discussion around the implications of this finding for research and practice, limitations of the current study, and directions for future research.
+
+\subsection{Theoretical Implications}
+
+The practical equivalence of LPT and Stochastic-MILP (Section~\ref{sec:results}) challenges conventional assumptions in the prescriptive analytics literature, which emphasizes sophisticated optimization as the primary source of value. Our results suggest an inversion of this relationship for clinical scheduling: when the optimization structure admits simple near-optimal solutions, prediction quality becomes the binding constraint. This aligns with recent work questioning the automatic superiority of end-to-end learning approaches over well-designed two-stage systems. The LPT-MILP equivalence connects to classical scheduling theory on conditions under which priority rules are optimal. In single-machine scheduling, Smith's rule establishes that shortest-processing-time ordering minimizes total weighted completion time. Our result provides a complementary insight for risk-dominated objectives: when the scheduling goal is to minimize tail-risk (overtime from high-risk patients), LPT emerges as near-optimal because it provides a scheduling-theoretic buffer---placing high-variance jobs early absorbs potential delays without cascading effects on subsequent patients. The MILP's role in this context is to \textit{prove} near-optimality rather than to improve upon it, analogous to how LP relaxation bounds certify heuristic quality in combinatorial optimization. Without the MILP benchmark, the claim that LPT is near-optimal would be unsubstantiated.
+
+The scalability analysis (Section~\ref{sec:scalability}) sharpens this argument further. The MILP becomes computationally intractable at $n \geq 20$ patients, and at $n = 30$, timed-out MILP solutions are actually \textit{inferior} to LPT by up to 27 minutes on individual instances. This inversion---where the sophisticated optimization method produces worse solutions than the simple heuristic under realistic computational constraints---underscores that the MILP's theoretical value lies in benchmarking, not in operational deployment. The result also provides an empirical data point for the broader prescriptive analytics literature on the conditions under which optimization complexity is justified: when the combinatorial structure of the problem permits a dominant priority rule, investment in solver infrastructure yields negative returns beyond the scale at which optimality can be certified.
+
+Beyond the scheduling result, the value decomposition methodology (Table~\ref{tab:value_analysis}) constitutes an independent methodological contribution to operations research: a systematic experimental design for attributing performance to prediction versus optimization components in prescriptive analytics systems. This factorial decomposition framework is applicable to any predict-then-optimize pipeline and provides a principled basis for investment decisions between predictive infrastructure and optimization capability.
+
+The equivalence of Age-Only ML and simple age-based rules (Section~\ref{sec:value_analysis}) provides a broader insight into the relationship between model complexity and feature richness. Machine learning algorithms cannot extract predictive signal that does not exist in the input features. When restricted to age-derived features, gradient boosting merely rediscovers the monotonic relationship that simple stratification already captures. This implies that investments in model sophistication yield diminishing returns unless accompanied by richer feature collection.
+
+The counter-intuitive finding that No Prediction outperforms age-based methods merits theoretical attention. Age-based heuristics embody a form of domain knowledge, yet this knowledge proves harmful when applied to scheduling. The explanation lies in systematic misallocation: age correlates with but does not cause procedural failure, and the residual variance within age strata is substantial. By attempting to differentiate patients using an inadequate proxy, age-based methods introduce bias that deterministic scheduling avoids. This suggests that partial information can be worse than no information when the information is applied without accounting for its limitations.
+
+\subsection{Practical Implications}
+
+For clinical operations managers, the findings suggest a clear implementation priority: invest in predictive infrastructure before optimization capability. The scalability analysis (Section~\ref{sec:scalability}) reinforces this message quantitatively: the MILP formulation is computationally infeasible for cohorts exceeding 20 patients, whereas LPT solves in approximately 2~milliseconds regardless of cohort size. Specifically, facilities should prioritize the systematic collection and integration of cognitive assessment data (MoCA, CDR) and behavioral symptom inventories (NPI-Q) into scheduling workflows. These data are routinely collected in Alzheimer's disease research settings but are rarely linked to operational scheduling systems. Once predictions are available, a spreadsheet-implementable LPT rule---sorting patients by predicted failure probability in descending order---captures nearly all available scheduling value without requiring optimization software. The MILP formulation remains valuable for research purposes and for settings with complex constraints, but is not required for practical deployment.
+
+The robustness and cohort composition analyses (Section~\ref{sec:value_analysis}) provide further implementation guidance. The framework's tolerance for prediction error reduces adoption barriers: facilities need not achieve research-grade predictive accuracy to realize scheduling improvements, and model calibration can be refined incrementally as operational data accumulates. Meanwhile, the increasing benefit for higher-risk cohorts suggests a staged deployment strategy: begin with specialized dementia clinics or late-stage trials where the return on investment is greatest, then expand as organizational capability develops.
+
+\subsection{Limitations}
+
+Several limitations qualify the interpretation of our findings. First, the experimental evaluation relies on simulated failure realizations calibrated to published clinical failure rates and population characteristics, rather than prospective operational data. While this design validates the framework architecture and value decomposition methodology, the specific quantitative improvements---including feature importance rankings and overtime reduction magnitudes---should be interpreted as illustrative of the framework's potential rather than as empirical effect sizes generalizable to specific clinical sites. The ultimate validation of operational benefit requires deployment in clinical settings with measurement of actual scheduling outcomes.
+
+Second, the single-day scheduling horizon and assumption of known patient cohorts may not reflect all operational realities. In practice, patient arrivals may be stochastic, cancellations and no-shows introduce additional uncertainty, and scheduling horizons may extend across multiple days with carryover effects. Extending the framework to address these complexities represents an important direction for future work.
+
+Third, the feature set used in our predictive model, while comprehensive for cognitive and behavioral assessment, may not capture all predictors of procedural failure. Factors such as claustrophobia severity, prior MRI experience, medication effects, and time-of-day preferences may contribute to failure risk but are not systematically recorded in current clinical trial databases. Richer feature sets could further improve predictive performance.
+
+Fourth, the equivalence between MILP and LPT observed at $n = 10$ extends to $n = 20$ and partially to $n = 30$ (Section~\ref{sec:scalability}), but may not generalize to all problem structures. With more resources, asymmetric processing requirements, or complex precedence constraints---such as multi-day scheduling with carryover effects or shared resources across departments---the optimization component may contribute more substantially. Our findings are specific to the three-resource sequential structure characteristic of Alzheimer's disease clinical trials, and the scalability analysis suggests that even within this structure, computational limits constrain the MILP's applicability to small instances.
+
+\subsection{Future Research Directions}
+
+Several extensions merit investigation. First, prospective validation studies deploying the framework in operational clinical settings would provide definitive evidence of practical benefit. Such studies could also reveal implementation challenges not apparent in computational experiments, such as clinician adoption, workflow integration, and patient communication considerations.
+
+Second, the predict-then-optimize framework could be extended to incorporate online learning, updating failure probability estimates as new procedural outcomes are observed. This would address potential model drift and enable continuous improvement without periodic retraining.
+
+Third, the framework could be extended to multi-day scheduling with carryover effects, patient preferences for appointment times, and stochastic patient arrivals. These extensions would increase realism at the cost of computational complexity, potentially shifting the balance between heuristic and optimization-based approaches.
+
+Fourth, while we focused on Alzheimer's disease clinical trials as a motivating application, the framework is potentially applicable to other settings where patient-specific characteristics predict procedural duration variability. Pediatric MRI represents a particularly promising candidate: motion artifact rates in unsedated children under six years of age can exceed 50\%, and predictive features such as age, developmental stage, prior scan experience, and anxiety screening scores are routinely available. Procedures requiring conscious sedation---endoscopy, interventional radiology, dental surgery under sedation---exhibit analogous heterogeneity, where patient weight, comorbidities, and medication history predict sedation adequacy and thus procedural duration. Beyond healthcare, customized manufacturing cells where product specifications predict processing complexity, and airport security screening where passenger characteristics predict inspection duration, share the structural property of observable individual heterogeneity in service times. Cross-domain validation studies would establish the generalizability boundaries of the predict-then-schedule architecture and identify problem characteristics (number of resources, degree of patient heterogeneity, failure rate prevalence) that determine whether prediction or optimization contributes more to scheduling performance.
+
+
+%==============================================================================
+% SECTION 6: CONCLUSION
+%==============================================================================
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper asked where value resides when machine learning prediction is integrated with stochastic optimization for scheduling under individual-level uncertainty. Using a two-phase prescriptive analytics framework grounded in Alzheimer's disease clinical trials, we trained gradient boosting models to predict patient-specific MRI failure probabilities from cognitive assessments, behavioral symptoms, and clinical staging, then embedded these predictions as Bernoulli service time distributions in a job-shop scheduling formulation.
+
+The computational experiments yielded three principal findings. First, prediction quality rather than optimization sophistication drives scheduling performance: simple risk-first sequencing matches mixed-integer programming, reducing overtime probability by approximately nine percentage points compared to age-based heuristics. Scalability experiments confirm this result extends to realistic clinic volumes---at $n \geq 20$ patients, the MILP becomes intractable while LPT solves in constant time, and at $n = 30$, timed-out MILP solutions are actually inferior to the simple heuristic. Second, machine learning adds value only when the feature set extends beyond demographics to include cognitive and behavioral biomarkers---model sophistication cannot compensate for feature poverty. Third, the framework is robust to prediction error and provides increasing benefit as cohort risk rises.
+
+For researchers, these results highlight the importance of examining where value originates in prescriptive analytics systems---the conventional emphasis on optimization may be misplaced when prediction is the binding constraint. For practitioners, the path to implementation requires not sophisticated optimization software but systematic integration of cognitive assessment data, already collected for diagnostic purposes, into operational scheduling workflows. By bridging prediction and prescription through a principled stochastic interface, the framework transforms patient-level clinical knowledge into scheduling decisions that reduce overtime, improve resource utilization, and ultimately support the efficient conduct of clinical research.
+
+
+\bibliography{references}
+
+\end{document}

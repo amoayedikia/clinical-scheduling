@@ -63,3 +63,14 @@ Thumbs.db
 *.synctex.gz
 *.fls
 *.fdb_latexmk
+
+# --- NACC74 real-data extension (NOT redistributable under DUA) ---
+data-nacc74/
+*.parquet
+
+# --- Participant-level Week-1 outputs (DUA) ---
+results/week1_a2_qc_matched.csv
+results/week1_a2_study_level_qc.csv
+
+# --- Exception: crosswalk is a code deliverable, no participant data ---
+!crosswalk_uds3_uds4.csv

@@ -1,0 +1,44 @@
+group,uds3_variable,role,in_uds4_rdd,in_nacc74_parquet,uds4_form,uds4_descriptor,status,candidates,uds4_variable,notes
+id/date,NACCID,merge key,True,True,header,Participant ID number,same,,NACCID,Merge key unchanged.
+id/date,VISITYR,visit date build,False,False,,,restructured,VISION;VISITDATE,VISITDATE,UDS3 VISITYR/VISITMO/VISITDAY replaced by single VISITDATE string 'YYYY-MM-DD' in NACC74; derive components or parse directly with pd.to_datetime.
+id/date,VISITMO,visit date build,False,False,,,restructured,VISION;VISITDATE,VISITDATE,See VISITYR.
+id/date,VISITDAY,visit date build,False,False,,,restructured,VISION;VISITDATE,VISITDATE,See VISITYR. Note v3_fixed imputes VISITDAY=15 when missing; unnecessary with VISITDATE.
+demog,NACCAGE,Tier 5 model feature,True,True,a1,Participant's age at visit,same,,NACCAGE,NACC-derived; computed identically across eras.
+moca,MOCATOTS,Tier 3 model feature,True,True,c2,MoCA Total Raw Score - uncorrected,same-harmonize,,MOCATOTS,"Name/range unchanged (0-30). HARMONIZATION: UDS4 C2 changed MoCA administration (e.g., telephone/remote variants, item substitutions); treat UDS3 vs UDS4 MoCA as same scale but flag era in sensitivity analysis."
+moca,NACCMOCA,Tier 3 model feature,True,True,c2,MoCA Total Score - corrected for education,same-harmonize,,NACCMOCA,"Education-corrected MoCA; same derivation, same caveat as MOCATOTS."
+moca,MOCAREAS,QC/missingness reason,True,True,c2c2t,"If no part of MoCA administered,
+reason code",same,,MOCAREAS,Reason MoCA not completed.
+cdr,CDRSUM,Tier 4 model feature,True,True,b4,Standard CDR sum of boxes,same,,CDRSUM,CDR unchanged UDS3->UDS4 (Form B4 stable).
+cdr,CDRGLOB,Tier 4 model feature,True,True,b4,Global CDR,same,,CDRGLOB,CDR unchanged.
+cdr,MEMORY,"loaded, not in model",True,True,b4,Memory,same,,MEMORY,CDR domain; loaded but not a model feature.
+cdr,ORIENT,"loaded, not in model",True,True,b4,Orientation,same,,ORIENT,CDR domain.
+cdr,JUDGMENT,"loaded, not in model",True,True,b4,Judgment and problem-solving,same,,JUDGMENT,CDR domain.
+npiq,NPIQINF,informant flag,True,True,b5,NPI-Q co-participant,same,,NPIQINF,NPI-Q informant flag.
+npiq,AGIT,Tier 1 model feature,True,True,b5,Agitation or aggression in the last month,same,,AGIT,NPI-Q item names unchanged in UDS4 RDD and present in NACC74 data.
+npiq,AGITSEV,Tier 2 model feature,True,True,b5,Agitation or aggression severity,same,,AGITSEV,Severity 1-3 unchanged.
+npiq,ANX,Tier 1 model feature,True,True,b5,Anxiety in the last month,same,,ANX,
+npiq,ANXSEV,Tier 2 model feature,True,True,b5,Anxiety severity,same,,ANXSEV,
+npiq,MOT,Tier 1 model feature,True,True,b5,Motor disturbance in the last month,same,,MOT,
+npiq,MOTSEV,Tier 2 model feature,True,True,b5,Motor disturbance severity,same,,MOTSEV,
+npiq,IRR,Tier 6 model feature,True,True,b5,Irritability or lability in the last month,same,,IRR,
+npiq,DEL,Tier 6 model feature,True,True,b5,Delusions in the last month,same,,DEL,
+npiq,HALL,Tier 6 model feature,True,True,b5,Hallucinations in the last month,same,,HALL,
+npiq,DEPD,Tier 6 model feature,True,True,b5,Depression or dysphoria in the last month,same,,DEPD,
+npiq,DEPDSEV,SEVERITY_WEIGHTED_RISK input,True,True,b5,Depression or dysphoria severity,same,,DEPDSEV,
+npiq,ELAT,"loaded, not in model",True,True,b5,Elation or euphoria in the last month,same,,ELAT,
+npiq,APA,BEHAVIORAL_RISK input,True,True,b5,Apathy or indifference in the last month,same,,APA,
+npiq,DISN,BEHAVIORAL_RISK input,True,True,b5,Disinhibition in the last month,same,,DISN,
+npiq,NITE,"loaded, not in model",True,True,b5,Nighttime behaviors in the last month,same,,NITE,
+npiq,APP,"loaded, not in model",True,True,b5,Appetite and eating problems in the last month,same,,APP,
+clin,DECCLCOG,Tier 5 model feature,True,True,b9,"Based on the clinician’s judgment, is the participant currently
+experiencing meaningful impairment in cognition?",same,,DECCLCOG,Clinician judgment of meaningful cognitive decline.
+clin,COGMEM,"loaded, not in model",True,True,b9,"Participant currently is meaningfully impaired, relative to stable baseline, in memory",same,,COGMEM,
+clin,BEAPATHY,"loaded, not in model",True,True,b9,"Participant currently manifests meaningful change in behavior –Apathy, withdrawal",same,,BEAPATHY,
+clin,BEDEP,"loaded, not in model",True,True,b9,Participant currently manifests meaningful change in behavior –Depressed mood,same,,BEDEP,
+clin,BEAGIT,Tier 5 model feature; CLINICIAN_CONCERN input,True,True,b9,Participant currently manifests meaningful change in behavior –Agitation,same,,BEAGIT,
+clin,BEANX,CLINICIAN_CONCERN input,True,True,b9,Participant currently manifests meaningful change in behavior –Anxiety,same,,BEANX,
+mmse,NACCMMSE,"backup, low UDS3 coverage",True,True,c1,Total MMSE score (using D-L-R-O-W),same,,NACCMMSE,MMSE retired after UDS2; expect near-zero coverage in UDS3/UDS4-era visits (backup only).
+mri,STUDYDATE,MRI merge (NACC69 mriqc table),False,False,,,same-new-file,,STUDYDATE,"Identical schema; now in data-nacc74/scan_clariti_mri/investigator_scan_clariti_mriqc_nacc74.parquet (was investigator_scan_mriqc_nacc69.csv). NACC74 file adds FUNDINGSOURCE, QCUPDATESTAMP, PROJECT columns."
+mri,STUDYQC,target: MRI_FAILED (NACC69 mriqc table),False,False,,,same-new-file,,STUDYQC,Target variable for MRI_FAILED; same file move as STUDYDATE.
+era,(FORMVER),era split for A3/E8,True,True,header,UDS form version,new-use,,FORMVER,"Era definition: UDS3 = FORMVER in {3.0, 3.2} (106,876 visits); UDS4 = 4.0 (6,597 visits); legacy 1.0/2.0 = 104,125. PACKET/NACCVNUM also available."
+mri,(SERIESQC),A2 continuous QC proxy,False,True,SCAN/Clariti,Series-level QC,new-use,,SERIESQC/SERIESQCREASONS/STUDYRESCANREQUESTED,Graded QC signal for A2: SERIESQC + SERIESQCREASONS + STUDYRESCANREQUESTED in scan_clariti_mriqc parquet.
