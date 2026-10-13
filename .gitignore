@@ -69,8 +69,11 @@ data-nacc74/
 *.parquet
 
 # --- Participant-level Week-1 outputs (DUA) ---
-results/week1_a2_qc_matched.csv
-results/week1_a2_study_level_qc.csv
+results/week1/week1_a2_qc_matched.csv
+results/week1/week1_a2_study_level_qc.csv
+
+# --- Participant-level A2 outputs (DUA) ---
+results/a2/a2_qc_scored.csv
 
 # --- Exception: crosswalk is a code deliverable, no participant data ---
 !crosswalk_uds3_uds4.csv

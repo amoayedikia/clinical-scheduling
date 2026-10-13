@@ -1,0 +1,7 @@
+Scenario,Arm,Replication,Method,Expected_Makespan,Overtime_Prob
+era34,model,1,Stochastic-MILP,694.5,0.23333333333333334
+era34,model,1,LPT,694.6666666666666,0.2
+era34,oracle,1,Stochastic-MILP,690.0,0.16666666666666666
+era34,oracle,1,LPT,690.0,0.16666666666666666
+era34,n/a,1,Deterministic,690.0,0.16666666666666666
+era34,n/a,1,Age-Stratified,697.1666666666666,0.16666666666666666

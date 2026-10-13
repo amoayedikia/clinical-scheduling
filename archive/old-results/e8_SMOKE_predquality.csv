@@ -1,0 +1,2 @@
+Scenario,N_Train,Train_Event_Rate,N_Eval_Pool,Spearman_phat_ptrue,MAE_phat_ptrue,Eval_p_true_mean,Eval_p_hat_mean,Eval_CDR1_pct
+era34,2000,0.219,5625,0.178,0.063,0.169,0.1841,6.2
