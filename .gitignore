@@ -77,3 +77,9 @@ results/a2/a2_qc_scored.csv
 
 # --- Exception: crosswalk is a code deliverable, no participant data ---
 !crosswalk_uds3_uds4.csv
+
+# --- keep out of the repo: code + supplementary only ---
+manuscript/
+archive/
+results/
+docs/HANDOVER.md
